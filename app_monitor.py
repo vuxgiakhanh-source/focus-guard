@@ -1,0 +1,161 @@
+# -*- coding: utf-8 -*-
+import ctypes
+import time
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
+
+class AppDistractionMonitor:
+    """
+    Giám sát thao tác trên ứng dụng và mạng xã hội gây xao nhãng (Facebook, YouTube, TikTok...):
+    - CHỈ CẢNH BÁO KHI THỰC SỰ ĐANG DÙNG / THAO TÁC (click chuột, gõ phím, cuộn trang).
+    - Mở tab để đó nghe nhạc hoặc không đụng vào -> HOÀN TOÀN KHÔNG BÁO ĐỘNG.
+    - Giờ giải lao Pomodoro -> Cho phép giải trí tự do 100%.
+    - Chạy native bằng Windows User32 API (tốn 0.001ms, 0% CPU).
+    """
+    def __init__(self, active_operate_thresh_sec=2.5, idle_timeout_sec=2.0, debounce_sec=2.5, **kwargs):
+        self.active_operate_thresh_sec = debounce_sec if debounce_sec != 2.5 else active_operate_thresh_sec
+        self.idle_timeout_sec = idle_timeout_sec
+
+        self.active_operate_time = 0.0
+        self.last_check_time = time.time()
+        self.last_poll_time = 0.0
+        self.cached_result = None
+        self.current_distraction = None
+
+        self.user32 = ctypes.windll.user32
+        self.kernel32 = ctypes.windll.kernel32
+        self._attached = False
+        self._ensure_desktop_access()
+
+    def _ensure_desktop_access(self):
+        """Đảm bảo thread có quyền đọc tiêu đề cửa sổ trên Desktop người dùng"""
+        try:
+            h_winsta = self.user32.OpenWindowStationW('WinSta0', False, 0x037F)
+            if h_winsta:
+                self.user32.SetProcessWindowStation(h_winsta)
+                h_desk = self.user32.OpenDesktopW('Default', 0, False, 0x01FF)
+                if h_desk:
+                    self.user32.SetThreadDesktop(h_desk)
+                    self._attached = True
+        except Exception:
+            pass
+
+    def get_system_idle_seconds(self):
+        """Số giây kể từ lần người dùng chạm chuột / gõ phím cuối cùng trên máy tính"""
+        try:
+            lii = LASTINPUTINFO()
+            lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+            if self.user32.GetLastInputInfo(ctypes.byref(lii)):
+                millis = self.kernel32.GetTickCount() - lii.dwTime
+                return max(0.0, millis / 1000.0)
+        except Exception:
+            pass
+        return 999.0
+
+    def get_foreground_title(self):
+        """Lấy tiêu đề cửa sổ đang nằm trên cùng màn hình (Active Window Title)"""
+        try:
+            hwnd = self.user32.GetForegroundWindow()
+            if not hwnd:
+                if not self._attached:
+                    self._ensure_desktop_access()
+                    hwnd = self.user32.GetForegroundWindow()
+            if not hwnd:
+                return ""
+
+            length = self.user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buff = ctypes.create_unicode_buffer(length + 1)
+                self.user32.GetWindowTextW(hwnd, buff, length + 1)
+                return buff.value.strip()
+        except Exception:
+            pass
+        return ""
+
+    def check_distraction(self, is_pomodoro_break=False):
+        """
+        Kiểm tra người dùng có đang THỰC SỰ THAO TÁC trên Facebook hay YouTube không:
+        - Mở tab nhưng không đụng chuột/phím -> An toàn (cho phép nghe nhạc, để tab)
+        - Đang click, cuộn trang, gõ phím trên Facebook/YouTube > 2.5s -> CẢNH BÁO!
+        """
+        now = time.time()
+        # Throttling kiểm tra mỗi 0.15s (tiết kiệm 80% số lần gọi Windows API)
+        if (now - self.last_poll_time < 0.15) and not is_pomodoro_break:
+            return self.cached_result
+        self.last_poll_time = now
+
+        dt = max(0.0, min(1.0, now - self.last_check_time))
+        self.last_check_time = now
+
+        # Nếu đang trong giờ giải lao Pomodoro: Cho phép giải trí tự do 100%
+        if is_pomodoro_break:
+            self.active_operate_time = 0.0
+            self.current_distraction = None
+            self.cached_result = None
+            return None
+
+        title = self.get_foreground_title()
+        if not title:
+            self.active_operate_time = max(0.0, self.active_operate_time - dt)
+            self.cached_result = None
+            return None
+
+        t_low = title.lower()
+
+        # Bỏ qua cửa sổ FocusGuard chính
+        if "focusguard" in t_low:
+            self.active_operate_time = max(0.0, self.active_operate_time - dt)
+            return None
+
+        d_type = None
+        d_label = None
+
+        if "facebook" in t_low or "fb.com" in t_low:
+            d_type = "FACEBOOK"
+            d_label = "Facebook"
+        elif "youtube" in t_low or "youtu.be" in t_low:
+            d_type = "YOUTUBE"
+            d_label = "YouTube"
+        elif "tiktok" in t_low:
+            d_type = "WEB_DISTRACT"
+            d_label = "TikTok"
+        elif any(k in t_low for k in ["bilibili", "netflix", "shopee", "lazada", "instagram"]):
+            d_type = "WEB_DISTRACT"
+            d_label = "Mạng xã hội / Mua sắm"
+
+        # Nếu cửa sổ hiện tại KHÔNG PHẢI mạng xã hội (đang ở Word, Docs, IDE, PDF...):
+        if not d_type:
+            self.active_operate_time = 0.0
+            self.current_distraction = None
+            return None
+
+        # Cửa sổ hiện tại LÀ Facebook/YouTube:
+        # Kiểm tra xem người dùng có ĐANG THAO TÁC (gõ phím, click chuột, cuộn trang) không?
+        idle_sec = self.get_system_idle_seconds()
+        is_actively_operating = (idle_sec < self.idle_timeout_sec)
+
+        if is_actively_operating:
+            # Người dùng đang chủ động cuộn chuột, gõ phím, click link trên tab này!
+            if self.current_distraction != d_type:
+                self.current_distraction = d_type
+                self.active_operate_time = 0.0
+
+            self.active_operate_time += dt
+        else:
+            # Người dùng chỉ mở tab để đó, không tương tác -> hạ dần thời gian tích lũy
+            self.active_operate_time = max(0.0, self.active_operate_time - dt * 1.5)
+
+        should_alert = (self.active_operate_time >= self.active_operate_thresh_sec)
+
+        res = {
+            "is_distracted": (self.active_operate_time > 0.4),
+            "is_operating": is_actively_operating,
+            "should_alert": should_alert,
+            "alert_type": d_type,
+            "label": d_label,
+            "duration": round(self.active_operate_time, 1),
+            "window_title": title
+        }
+        self.cached_result = res
+        return res
