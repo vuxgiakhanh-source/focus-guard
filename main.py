@@ -119,7 +119,7 @@ def run_focus_guard():
     alert_mgr = SoundAlertManager()
     hud = HUDRenderer()
     pomodoro = PomodoroTimer(work_min=25, break_min=5)
-    app_monitor = AppDistractionMonitor(active_operate_thresh_sec=2.5, idle_timeout_sec=2.0)
+    app_monitor = AppDistractionMonitor(active_operate_thresh_sec=6.0, idle_timeout_sec=2.0)
 
     # Khởi tạo camera với DirectShow (mở cực nhanh <0.2s trên Windows) và tự động thử camera 1 nếu camera 0 bận
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -312,29 +312,14 @@ def run_focus_guard():
                     cv2.putText(frame, "DIEN THOAI (TREN BAN)", (x1 + 6, max(16, y1 - 7)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
 
-        # 5. Xử lý cảnh báo (Giọng nói + Windows Toast)
+        # 5. Xử lý cảnh báo (Giọng nói thông minh + Windows Toast không làm phiền)
         if result.get("label") == "WEBCAM BỊ CHE / TỐI ĐEN":
             toast_mgr.show_toast(
                 "FocusGuard Lưu Ý",
                 "📷 Webcam đang bị tối đen hoặc đóng nắp che camera (E-Shutter)! Vui lòng gạt mở nắp camera hoặc bật đèn phòng.",
                 "black_cam",
-                cooldown=20.0
-            )
-        elif result.get("label") == "NGỒI QUÁ GẦN MÀN HÌNH":
-            toast_mgr.show_toast(
-                "FocusGuard Tư Thế",
-                "👀 Bạn đang ngồi quá gần màn hình (<35cm)! Hãy lùi ra xa (>= 50cm) để bảo vệ mắt nhé!",
-                "too_close",
-                cooldown=25.0,
-                silent=is_muted
-            )
-        elif result.get("label") == "CHỈNH LẠI TƯ THẾ CỔ":
-            toast_mgr.show_toast(
-                "FocusGuard Tư Thế",
-                "🧘 Hãy ngồi thẳng lưng, tránh nghiêng cổ hoặc tì cằm quá lâu gây gù lưng!",
-                "neck_tilt",
                 cooldown=30.0,
-                silent=is_muted
+                silent=True
             )
 
         if result["alert"] and not is_break:
@@ -343,20 +328,30 @@ def run_focus_guard():
                 if alert_type in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
                     web_events += 1
                     target_name = web_distract['label'] if web_distract else "mạng xã hội"
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"⚠️ Bạn đang thao tác trên {target_name} trong giờ học! Hãy quay lại bài nhé!", "web_alert", cooldown=8.0, silent=is_muted)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"⚠️ Bạn đang thao tác trên {target_name} trong giờ học! Hãy quay lại bài nhé!", "web_alert", cooldown=20.0, silent=True)
                 elif alert_type == "PHONE":
                     phone_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "⚠️ Phát hiện bạn đang cầm điện thoại trên tay!", "phone_alert", cooldown=10.0, silent=is_muted)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "⚠️ Phát hiện bạn đang cầm điện thoại trên tay!", "phone_alert", cooldown=18.0, silent=True)
                 elif result["status"] == "DROWSY":
                     drowsy_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "😴 Cảnh báo buồn ngủ! Hãy đứng dậy vận động hoặc rửa mặt!", "drowsy_alert", cooldown=10.0, silent=is_muted)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "😴 Cảnh báo buồn ngủ! Hãy đứng dậy vận động hoặc rửa mặt!", "drowsy_alert", cooldown=18.0, silent=True)
                 elif result["status"] in ["DISTRACTED", "AWAY"]:
                     distraction_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"👀 {result['reason']}", "distract_alert", cooldown=10.0, silent=is_muted)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"👀 {result['reason']}", "distract_alert", cooldown=20.0, silent=True)
                 last_alert_state = True
 
             if not is_muted and result.get("alert_type"):
-                voice_cd = 7.0 if result["alert_type"] == "AWAY" else 3.5
+                # Giãn cách thông minh: Không bao giờ nói lặp đi lặp lại quấy rầy người học
+                if result["alert_type"] == "AWAY":
+                    voice_cd = 60.0    # Rời bàn chỉ nhắc 1 lần, 60s sau mới nhắc lại nếu vẫn chưa về
+                elif result["alert_type"] in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
+                    voice_cd = 20.0    # Mạng xã hội giãn cách 20s
+                elif result["alert_type"] == "PHONE":
+                    voice_cd = 16.0    # Điện thoại giãn cách 16s
+                elif result["alert_type"] == "DROWSY":
+                    voice_cd = 15.0    # Buồn ngủ giãn cách 15s
+                else:
+                    voice_cd = 18.0    # Quay mặt đi giãn cách 18s (triệt tiêu nói lặp 3.5s)
                 alert_mgr.play_voice(result["alert_type"], cooldown=voice_cd)
         else:
             # Ngay khi quay lại tập trung: Dừng âm thanh nếu đã phát xong câu cảnh báo (chống ngắt ngang ngắp ngứ)

@@ -72,9 +72,9 @@ class FocusDetector:
     def __init__(self,
                  model_path="face_landmarker.task",
                  ear_threshold=0.18,          # Ngưỡng mắt mặc định
-                 drowsy_limit_sec=2.5,        # Nhắm mắt 2.5s mới báo buồn ngủ
-                 distracted_limit_sec=4.0,    # Lệch khỏi vùng học quá 4s mới nhắc
-                 away_limit_sec=7.0):         # Rời bàn quá 7s mới nhắc
+                 drowsy_limit_sec=4.0,        # Nhắm mắt >= 4.0s mới coi là ngủ gật (NHTSA / ISO micro-sleep)
+                 distracted_limit_sec=5.0,    # Quay mặt đi >= 5.0s mới tính là mất tập trung
+                 away_limit_sec=18.0):        # Rời bàn >= 18s mới bắt đầu báo (cho phép vươn vai, lấy nước)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản World-Class DMS):
         1. MediaPipe suy luận xen kẽ khung hình (Inference Decimation: 15 FPS AI)
@@ -88,8 +88,8 @@ class FocusDetector:
         self.ear_threshold = ear_threshold
         self.drowsy_limit_sec = drowsy_limit_sec
         self.distracted_limit_sec = distracted_limit_sec
-        self.away_limit_sec = 10.0           # Rời bàn quá 10s mới nhắc (cho phép vươn vai/nhặt bút)
-        self.writing_grace_sec = 40.0        # Ân hạn 40s khi cúi đầu viết bài mà không bao giờ bị báo rời bàn
+        self.away_limit_sec = away_limit_sec
+        self.writing_grace_sec = 45.0        # Ân hạn 45s khi cúi đầu viết bài mà không bao giờ bị báo rời bàn
         self.last_seen_pitch = 0.0
         self.last_seen_reading = False
 
@@ -807,7 +807,7 @@ class FocusDetector:
             self.last_phone_seen_time = now
             phone_dur = now - self.phone_detected_start
 
-            if phone_dur >= 1.5:
+            if phone_dur >= 2.5:
                 status = "DISTRACTED"
                 label = "PHÁT HIỆN ĐIỆN THOẠI!"
                 reason = "Đang cầm điện thoại trên tay!"
@@ -820,7 +820,7 @@ class FocusDetector:
         else:
             if hasattr(self, 'last_phone_seen_time') and (now - self.last_phone_seen_time < 0.8) and self.phone_detected_start:
                 phone_dur = now - self.phone_detected_start
-                if phone_dur >= 1.5:
+                if phone_dur >= 2.5:
                     status = "DISTRACTED"
                     label = "PHÁT HIỆN ĐIỆN THOẠI!"
                     reason = "Đang cầm điện thoại trên tay!"
@@ -834,7 +834,7 @@ class FocusDetector:
                 self.phone_detected_start = None
 
         # Ưu tiên 2: BUỒN NGỦ / GỤC XUỐNG BÀN / PERCLOS / MICRO-SLEEP
-        micro_sleep_limit = 4.5 if is_reading_desk else self.drowsy_limit_sec
+        micro_sleep_limit = 5.5 if is_reading_desk else self.drowsy_limit_sec
         # CHỈ COI LÀ GỤC XUỐNG BÀN KHI TRÁN ÚP HOÀN TOÀN XUỐNG MẶT BÀN (pitch < -72°) VÀ MẮT NHẮM NGHIỀN
         is_head_drooped = (pitch < -72.0) and is_eyes_closed
 
@@ -860,7 +860,7 @@ class FocusDetector:
                     status = "WARNING"
                     label = "CẢNH GIÁC"
                     reason = "Mắt đang nhắm..."
-            elif (not is_reading_desk) and (self.perclos_val >= 0.42):
+            elif (not is_reading_desk) and (self.perclos_val >= 0.50):
                 status = "DROWSY"
                 label = "BUỒN NGỦ (PERCLOS CAO)"
                 reason = f"Mắt nhắm/lờ đờ {int(self.perclos_val*100)}% thời gian gần đây!"
@@ -894,52 +894,55 @@ class FocusDetector:
             else:
                 self.distracted_start = None
 
-        # Ưu tiên 4: GAZE TRACKING (ĐẦU THẲNG NHƯNG LIẾC MẮT RA NGOÀI)
+        # Ưu tiên 4: GAZE TRACKING (CHỈ HIỂN THỊ NHẮC NHỞ TRÊN HUD, TUYỆT ĐỐI KHÔNG BẬT GIỌNG NÓI CẢNH BÁO)
+        # Liếc mắt khi đọc tài liệu/màn hình là hành vi học tập bình thường, không được quấy rầy người học.
         if status == "FOCUSED" and is_gaze_diverted:
             if self.gaze_away_start is None:
                 self.gaze_away_start = now
             gaze_dur = now - self.gaze_away_start
-            if gaze_dur > 4.0:
-                status = "DISTRACTED"
-                label = "ĐẢO MẮT RA NGOÀI"
-                reason = f"Mắt liếc ra khỏi bàn học ({gaze_dur:.1f}s)!"
-                should_alert = True
-                alert_type = "GAZE_AWAY"
+            if gaze_dur > 6.0:
+                status = "WARNING"
+                label = "LƯU Ý ÁNH MẮT"
+                reason = "Ánh mắt đang nhìn xa khỏi bài học"
+                should_alert = False
+                alert_type = None
         else:
             self.gaze_away_start = None
 
-        # Ưu tiên 5: NGÁP
+        # Ưu tiên 5: NGÁP (CHỈ NHẮC NHẸ TRÊN HUD, KHÔNG GÂY PHIỀN TOÁI)
         if status == "FOCUSED" and is_yawning:
             status = "WARNING"
             label = "MỆT MỎI (NGÁP)"
-            reason = "Phát hiện ngáp, hãy hít thở sâu nghỉ ngơi"
-            alert_type = "YAWN"
+            reason = "Hít thở sâu một hơi để nạp oxy nhé"
+            should_alert = False
+            alert_type = None
 
-        # Ưu tiên 6: KHOẢNG CÁCH MẮT - MÀN HÌNH (ERGONOMICS SCREEN DISTANCE)
-        # Chỉ kiểm tra khi ngồi thẳng nhìn màn hình (không cảnh báo khi cúi đầu làm bài trên bàn)
+        # Ưu tiên 6: KHOẢNG CÁCH MẮT - MÀN HÌNH (CHỈ BÁO TRÊN HUD KHI DÍ SÁT MẶT > 6.0s)
         eye_dist_px = math.hypot((landmarks[33].x - landmarks[263].x) * w, (landmarks[33].y - landmarks[263].y) * h)
-        if (not is_reading_desk) and eye_dist_px > 135.0:
+        if (not is_reading_desk) and eye_dist_px > 145.0:
             if self.too_close_start is None:
                 self.too_close_start = now
-            if (now - self.too_close_start) > 3.5:
+            if (now - self.too_close_start) > 6.0:
                 if status == "FOCUSED":
                     status = "WARNING"
                     label = "NGỒI QUÁ GẦN MÀN HÌNH"
                     reason = "Hãy lùi xa màn hình (>= 50cm) để bảo vệ mắt!"
-                    alert_type = "TOO_CLOSE"
+                    should_alert = False
+                    alert_type = None
         else:
             self.too_close_start = None
 
-        # Ưu tiên 7: TƯ THẾ CỔ (NECK TILT)
-        if abs(roll) > 28.0:
+        # Ưu tiên 7: TƯ THẾ CỔ (CHỈ BÁO TRÊN HUD KHI NGHIÊNG CỔ QUÁ LÂU > 8.0s)
+        if abs(roll) > 32.0:
             if self.neck_tilt_start is None:
                 self.neck_tilt_start = now
-            if (now - self.neck_tilt_start) > 5.0:
+            if (now - self.neck_tilt_start) > 8.0:
                 if status == "FOCUSED":
                     status = "WARNING"
                     label = "CHỈNH LẠI TƯ THẾ CỔ"
                     reason = "Tránh nghiêng cổ / tì cằm quá lâu!"
-                    alert_type = "NECK_TILT"
+                    should_alert = False
+                    alert_type = None
         else:
             self.neck_tilt_start = None
 

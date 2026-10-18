@@ -16,8 +16,8 @@ class AppDistractionMonitor:
     - Giờ giải lao Pomodoro -> Cho phép giải trí tự do 100%.
     - Chạy native bằng Windows User32 API (tốn 0.0003ms, 0% CPU).
     """
-    def __init__(self, active_operate_thresh_sec=2.5, idle_timeout_sec=2.0, debounce_sec=2.5, **kwargs):
-        self.active_operate_thresh_sec = debounce_sec if debounce_sec != 2.5 else active_operate_thresh_sec
+    def __init__(self, active_operate_thresh_sec=6.0, idle_timeout_sec=2.0, debounce_sec=6.0, **kwargs):
+        self.active_operate_thresh_sec = debounce_sec if debounce_sec != 6.0 else active_operate_thresh_sec
         self.idle_timeout_sec = idle_timeout_sec
 
         self.active_operate_time = 0.0
