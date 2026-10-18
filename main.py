@@ -175,10 +175,9 @@ def run_focus_guard():
     print("    - [Click / Q] : THOÁT ứng dụng & Lưu lịch sử học tập.")
     print("=" * 65)
 
-    # Bật thông báo Toast chào mừng với chuỗi ngày học
     streak_days, _ = history_mgr.calculate_streak()
     streak_msg = f"🔥 Chuỗi học tập hiện tại: {streak_days} ngày! Chúc bạn học tốt!" if streak_days > 0 else "Hệ thống giám sát tập trung đã sẵn sàng! Chúc bạn học tốt!"
-    toast_mgr.show_toast("FocusGuard AI", streak_msg, "welcome", cooldown=1.0)
+    print(f"[*] {streak_msg}")
 
     start_time = time.time()
     is_muted = False
@@ -221,15 +220,12 @@ def run_focus_guard():
         pomo_state, pomo_time_left, pomo_event = pomodoro.update()
         if pomo_event == "LONG_BREAK_START":
             alert_mgr.play_voice("BREAK_START", force=True)
-            toast_mgr.show_toast("FocusGuard Pomodoro", "☕ Xuất sắc! Bạn đã xong 4 chu kỳ học! Nghỉ ngơi sâu 15 phút nhé!", "pomo_long_break", cooldown=5.0)
             print("[*] POMODORO: 4 chu kỳ học hoàn thành! Bắt đầu NGHỈ DÀI 15 PHÚT!")
         elif pomo_event == "BREAK_START":
             alert_mgr.play_voice("BREAK_START", force=True)
-            toast_mgr.show_toast("FocusGuard Pomodoro", "☕ Hết 25 phút học! Nghỉ giải lao 5 phút thoải mái nhé!", "pomo_break", cooldown=5.0)
             print("[*] POMODORO: Hết 25 phút học! Nghỉ giải lao 5 phút thoải mái!")
         elif pomo_event == "BREAK_END":
             alert_mgr.play_voice("BREAK_END", force=True)
-            toast_mgr.show_toast("FocusGuard Pomodoro", "📚 Hết giờ nghỉ! Bắt đầu chu kỳ học 25 phút tiếp theo!", "pomo_work", cooldown=5.0)
             print("[*] POMODORO: Hết giờ nghỉ! Bắt đầu buổi học tiếp theo!")
 
         is_break = (pomo_state == "BREAK")
@@ -273,7 +269,6 @@ def run_focus_guard():
             calib_summary = result.get("calib_result_msg") or detector.last_calib_msg or "ĐÃ XÁC ĐỊNH XONG KHUNG HỌC TỰ NHIÊN! ✓"
             alert_msg = calib_summary
             alert_msg_time = time.time()
-            toast_mgr.show_toast("FocusGuard Khung Học", calib_summary, "calib_done", cooldown=1.0)
         last_recording_state = is_rec
 
         # Theo dõi tự động thích ứng góc học tập mới (Autonomous Zone Adaptation)
@@ -281,12 +276,6 @@ def run_focus_guard():
         if auto_msg and alert_msg != auto_msg:
             alert_msg = auto_msg
             alert_msg_time = time.time()
-            toast_mgr.show_toast(
-                "FocusGuard Tự Động Thích Ứng",
-                "🎯 Đã nhận diện bạn đổi góc ngồi! Tự động tạo vùng học mới chuẩn xác.",
-                "auto_zone",
-                cooldown=6.0
-            )
 
         # 4. Vẽ hộp nhận diện điện thoại (Đỏ nếu đang CẦM TRÊN TAY, Lam nếu ĐẶT TĨNH TRÊN BÀN)
         if detected_phones and not is_break:
@@ -312,32 +301,17 @@ def run_focus_guard():
                     cv2.putText(frame, "DIEN THOAI (TREN BAN)", (x1 + 6, max(16, y1 - 7)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
 
-        # 5. Xử lý cảnh báo (Giọng nói thông minh + Windows Toast không làm phiền)
-        if result.get("label") == "WEBCAM BỊ CHE / TỐI ĐEN":
-            toast_mgr.show_toast(
-                "FocusGuard Lưu Ý",
-                "📷 Webcam đang bị tối đen hoặc đóng nắp che camera (E-Shutter)! Vui lòng gạt mở nắp camera hoặc bật đèn phòng.",
-                "black_cam",
-                cooldown=30.0,
-                silent=True
-            )
-
         if result["alert"] and not is_break:
             if not last_alert_state:
                 alert_type = result.get("alert_type")
                 if alert_type in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
                     web_events += 1
-                    target_name = web_distract['label'] if web_distract else "mạng xã hội"
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"⚠️ Bạn đang thao tác trên {target_name} trong giờ học! Hãy quay lại bài nhé!", "web_alert", cooldown=20.0, silent=True)
                 elif alert_type == "PHONE":
                     phone_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "⚠️ Phát hiện bạn đang cầm điện thoại trên tay!", "phone_alert", cooldown=18.0, silent=True)
                 elif result["status"] == "DROWSY":
                     drowsy_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "😴 Cảnh báo buồn ngủ! Hãy đứng dậy vận động hoặc rửa mặt!", "drowsy_alert", cooldown=18.0, silent=True)
                 elif result["status"] in ["DISTRACTED", "AWAY"]:
                     distraction_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"👀 {result['reason']}", "distract_alert", cooldown=20.0, silent=True)
                 last_alert_state = True
 
             if not is_muted and result.get("alert_type"):
@@ -424,12 +398,6 @@ def run_focus_guard():
                 msg = detector.start_zone_learning(duration=10.0)
             alert_msg = msg
             alert_msg_time = time.time()
-            toast_mgr.show_toast(
-                "FocusGuard Khung Học",
-                msg,
-                "calib_action",
-                cooldown=1.0
-            )
         elif action == "POMODORO":
             state_active = pomodoro.toggle()
             print(f"[*] Chế độ Pomodoro: {'BẬT' if state_active else 'TẮT'}")
@@ -474,18 +442,6 @@ def run_focus_guard():
         pomo_cycles=pomodoro.completed_cycles,
         web_events=web_events
     )
-
-    try:
-        dur_mins, dur_secs = divmod(int(time.time() - start_time), 60)
-        toast_mgr.show_toast(
-            "FocusGuard PRO",
-            f"🎉 Phiên học kết thúc! Thời gian: {dur_mins}p {dur_secs}s | Tập trung: {final_score:.0f}%\nĐã lưu vào lịch sử học tập!",
-            toast_key="session_done",
-            cooldown=0.0
-        )
-        time.sleep(0.4)
-    except Exception:
-        pass
 
     history_mgr.print_report(saved_session)
 
