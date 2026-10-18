@@ -104,12 +104,17 @@ class AppDistractionMonitor:
             self.current_distraction = None
             return None
 
-        # Danh sách ứng dụng an toàn (học tập, làm việc, tìm kiếm tài liệu)
+        # Danh sách ứng dụng an toàn và công cụ học tập / nghiên cứu
         safe_keywords = [
             "visual studio", "code", "pycharm", "intellij", "cursor",
             "sublime", "notepad", "word", "excel", "powerpoint", "acrobat",
             "pdf", "terminal", "powershell", "cmd.exe", "git", "google search",
-            "tìm kiếm trên google", "tìm trên google", "bing search", "github", "stackoverflow"
+            "tìm kiếm trên google", "tìm trên google", "bing search", "github", "stackoverflow",
+            "notion", "obsidian", "anki", "quizlet", "overleaf", "latex", "calculator",
+            "desmos", "geogebra", "duolingo", "khan academy", "coursera", "edx", "udemy",
+            "leetcode", "hackerrank", "kaggle", "canva", "figma", "foxit", "adobe reader",
+            "wps office", "libreoffice", "google docs", "google sheets", "google slides",
+            "google drive", "zotero", "mendeley"
         ]
         if any(safe in t_low for safe in safe_keywords):
             self.active_operate_time = 0.0
@@ -119,7 +124,18 @@ class AppDistractionMonitor:
         d_type = None
         d_label = None
 
-        # Nhận diện chính xác tên trang mạng xã hội trên tiêu đề cửa sổ / tab trình duyệt
+        # 1. Nhận diện trò chơi điện tử (Gaming) - Mối nguy xao nhãng hàng đầu của học sinh / sinh viên
+        game_patterns = [
+            r'\b(league of legends|riot client|valorant|genshin impact|honkai|roblox|minecraft)\b',
+            r'\b(steam|epic games|origin|ubisoft connect|battle\.net|ea app)\b',
+            r'\b(counter-strike|cs:go|cs2|dota 2|pubg|apex legends|fifa|fc 24|fc 25)\b',
+            r'\b(garena|lien quan|free fire|naraka|black myth|elden ring|wuthering waves)\b'
+        ]
+        if any(re.search(p, t_low) for p in game_patterns):
+            d_type = "WEB_DISTRACT"
+            d_label = "Trò chơi điện tử (Game)"
+
+        # 2. Mạng xã hội & Chat
         fb_patterns = [
             r'(^|\s*[-–—|]\s*)facebook(\s*[-–—|]|\s*$)',
             r'^\([0-9+]+\)\s*facebook',
@@ -137,20 +153,34 @@ class AppDistractionMonitor:
             r'tiktok\.com'
         ]
 
-        if any(re.search(p, t_low) for p in fb_patterns):
-            d_type = "FACEBOOK"
-            d_label = "Facebook"
-        elif any(re.search(p, t_low) for p in yt_patterns):
-            # Cho phép nghe nhạc Lofi trên YouTube Music
-            if "music.youtube" not in t_low:
+        if not d_type:
+            if any(re.search(p, t_low) for p in fb_patterns):
+                d_type = "FACEBOOK"
+                d_label = "Facebook"
+            elif any(re.search(p, t_low) for p in yt_patterns):
+                # Ngoại lệ thông minh: Cho phép nghe Lofi hoặc xem BÀI GIẢNG / TUTORIAL trên YouTube
+                educational_yt_keywords = [
+                    "tutorial", "học", "bài giảng", "lecture", "course", "hướng dẫn",
+                    "ôn thi", "toán", "văn", "tiếng anh", "ielts", "toeic", "lập trình",
+                    "code", "python", "khoa học", "lịch sử", "địa lý", "vật lý",
+                    "hóa học", "sinh học", "khan academy", "coursera", "edx", "mit opencourseware",
+                    "crash course", "study with me", "lofi hip hop", "lofi study", "nhạc tập trung",
+                    "music.youtube"
+                ]
+                if any(kw in t_low for kw in educational_yt_keywords):
+                    # Đang xem video bài giảng hoặc nhạc học bài -> Bỏ qua không báo động!
+                    self.active_operate_time = 0.0
+                    self.current_distraction = None
+                    return None
+
                 d_type = "YOUTUBE"
                 d_label = "YouTube"
-        elif any(re.search(p, t_low) for p in tiktok_patterns):
-            d_type = "WEB_DISTRACT"
-            d_label = "TikTok"
-        elif any(k in t_low for k in ["bilibili", "netflix.com", "shopee.vn", "lazada.vn", "instagram.com"]):
-            d_type = "WEB_DISTRACT"
-            d_label = "Mạng xã hội / Mua sắm"
+            elif any(re.search(p, t_low) for p in tiktok_patterns):
+                d_type = "WEB_DISTRACT"
+                d_label = "TikTok"
+            elif any(k in t_low for k in ["bilibili", "netflix.com", "shopee.vn", "lazada.vn", "instagram.com", "discord", "telegram", "twitch.tv", "reddit.com", "threads.net"]):
+                d_type = "WEB_DISTRACT"
+                d_label = "Mạng xã hội / Giải trí"
 
         # Nếu cửa sổ hiện tại KHÔNG PHẢI mạng xã hội -> Reset ngay lập tức
         if not d_type:

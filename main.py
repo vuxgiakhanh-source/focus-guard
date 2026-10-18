@@ -150,7 +150,8 @@ def run_focus_guard():
 
     print("[+] Camera đã sẵn sàng!")
     print("    - [Click / C] : DẠY AI GÓC HỌC TẬP (2 PHÚT, cố gắng tập trung cao độ để AI lưu góc & mắt chuẩn).")
-    print("    - [Click / P] : BẬT / TẮT đồng hồ Pomodoro (25p học / 5p nghỉ).")
+    print("    - [Click / P] : BẬT / TẮT đồng hồ Pomodoro (25p học / 5p nghỉ / 15p nghỉ dài sau 4 hiệp).")
+    print("    - [Click / H] : BẬT / TẮT bảng THỐNG KÊ & CHUỖI HỌC TẬP (Daily Streak).")
     print("    - [Click / M] : BẬT / TẮT âm thanh cảnh báo.")
     print("    - [Click / R] : RESET điểm tập trung.")
     print("    - [Click / Q] : THOÁT ứng dụng & Lưu lịch sử học tập.")
@@ -167,11 +168,15 @@ def run_focus_guard():
         )
         print("[*] LẦN ĐẦU TIÊN SỬ DỤNG: Tự động bật 2 PHÚT đo góc học & dáng mắt (Hãy tập trung tối đa)!")
     else:
-        # Bật thông báo Toast chào mừng
-        toast_mgr.show_toast("FocusGuard AI", "Hệ thống giám sát tập trung đã sẵn sàng! Chúc bạn học tốt!", "welcome", cooldown=1.0)
+        # Bật thông báo Toast chào mừng với chuỗi ngày học
+        streak_days, _ = history_mgr.calculate_streak()
+        streak_msg = f"🔥 Chuỗi học tập hiện tại: {streak_days} ngày! Chúc bạn học tốt!" if streak_days > 0 else "Hệ thống giám sát tập trung đã sẵn sàng! Chúc bạn học tốt!"
+        toast_mgr.show_toast("FocusGuard AI", streak_msg, "welcome", cooldown=1.0)
 
     start_time = time.time()
     is_muted = False
+    show_stats = False
+    stats_data = None
     distraction_events = 0
     drowsy_events = 0
     phone_events = 0
@@ -201,16 +206,20 @@ def run_focus_guard():
 
         cv2.flip(frame, 1, dst=frame)
 
-        # 1. Cập nhật đồng hồ Pomodoro
+        # 1. Cập nhật đồng hồ Pomodoro (hỗ trợ Nghỉ Dài sau 4 hiệp)
         pomo_state, pomo_time_left, pomo_event = pomodoro.update()
-        if pomo_event == "BREAK_START":
+        if pomo_event == "LONG_BREAK_START":
+            alert_mgr.play_voice("BREAK_START", force=True)
+            toast_mgr.show_toast("FocusGuard Pomodoro", "☕ Xuất sắc! Bạn đã xong 4 chu kỳ học! Nghỉ ngơi sâu 15 phút nhé!", "pomo_long_break", cooldown=5.0)
+            print("[*] POMODORO: 4 chu kỳ học hoàn thành! Bắt đầu NGHỈ DÀI 15 PHÚT!")
+        elif pomo_event == "BREAK_START":
             alert_mgr.play_voice("BREAK_START", force=True)
             toast_mgr.show_toast("FocusGuard Pomodoro", "☕ Hết 25 phút học! Nghỉ giải lao 5 phút thoải mái nhé!", "pomo_break", cooldown=5.0)
             print("[*] POMODORO: Hết 25 phút học! Nghỉ giải lao 5 phút thoải mái!")
         elif pomo_event == "BREAK_END":
             alert_mgr.play_voice("BREAK_END", force=True)
-            toast_mgr.show_toast("FocusGuard Pomodoro", "📚 Hết 5 phút nghỉ! Bắt đầu chu kỳ học 25 phút tiếp theo!", "pomo_work", cooldown=5.0)
-            print("[*] POMODORO: Hết 5 phút nghỉ! Bắt đầu buổi học tiếp theo!")
+            toast_mgr.show_toast("FocusGuard Pomodoro", "📚 Hết giờ nghỉ! Bắt đầu chu kỳ học 25 phút tiếp theo!", "pomo_work", cooldown=5.0)
+            print("[*] POMODORO: Hết giờ nghỉ! Bắt đầu buổi học tiếp theo!")
 
         is_break = (pomo_state == "BREAK")
 
@@ -288,6 +297,22 @@ def run_focus_guard():
                 "black_cam",
                 cooldown=20.0
             )
+        elif result.get("label") == "NGỒI QUÁ GẦN MÀN HÌNH":
+            toast_mgr.show_toast(
+                "FocusGuard Tư Thế",
+                "👀 Bạn đang ngồi quá gần màn hình (<35cm)! Hãy lùi ra xa (>= 50cm) để bảo vệ mắt nhé!",
+                "too_close",
+                cooldown=25.0,
+                silent=is_muted
+            )
+        elif result.get("label") == "CHỈNH LẠI TƯ THẾ CỔ":
+            toast_mgr.show_toast(
+                "FocusGuard Tư Thế",
+                "🧘 Hãy ngồi thẳng lưng, tránh nghiêng cổ hoặc tì cằm quá lâu gây gù lưng!",
+                "neck_tilt",
+                cooldown=30.0,
+                silent=is_muted
+            )
 
         if result["alert"] and not is_break:
             if not last_alert_state:
@@ -324,7 +349,16 @@ def run_focus_guard():
         # 7. Vẽ giao diện HUD chuyên nghiệp
         elapsed_sec = time.time() - start_time
         pomodoro_info = (pomo_state, pomo_time_left) if pomodoro.is_active else None
-        frame = hud.draw_hud(frame, result, elapsed_sec, pomodoro_info=pomodoro_info, is_muted=is_muted, alert_msg=active_msg)
+        frame = hud.draw_hud(
+            frame,
+            result,
+            elapsed_sec,
+            pomodoro_info=pomodoro_info,
+            is_muted=is_muted,
+            alert_msg=active_msg,
+            show_stats=show_stats,
+            stats_data=stats_data
+        )
 
         # 8. Hiển thị
         cv2.imshow(WIN_TITLE, frame)
@@ -341,16 +375,23 @@ def run_focus_guard():
         if mouse_click_action:
             action = mouse_click_action
             mouse_click_action = None
+            if show_stats and action != "STATS":
+                show_stats = False
         elif key == ord('q') or key == ord('Q') or key == 27:
             action = "QUIT"
         elif key == ord('c') or key == ord('C'):
             action = "CALIBRATE"
         elif key == ord('p') or key == ord('P'):
             action = "POMODORO"
+        elif key == ord('h') or key == ord('H'):
+            action = "STATS"
         elif key == ord('r') or key == ord('R'):
             action = "RESET"
         elif key == ord('m') or key == ord('M'):
             action = "MUTE"
+        elif key != 255 and show_stats:
+            # Nhấn bất kỳ phím nào khác để đóng bảng thống kê
+            show_stats = False
 
         if action == "QUIT":
             break
@@ -366,6 +407,11 @@ def run_focus_guard():
         elif action == "POMODORO":
             state_active = pomodoro.toggle()
             print(f"[*] Chế độ Pomodoro: {'BẬT' if state_active else 'TẮT'}")
+        elif action == "STATS":
+            show_stats = not show_stats
+            if show_stats:
+                stats_data = history_mgr.get_summary_stats()
+            print(f"[*] Bảng thống kê học tập: {'MỞ' if show_stats else 'ĐÓNG'}")
         elif action == "RESET":
             detector.reset_focus_score()
             hud.score_history = [100.0, 100.0]

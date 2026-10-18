@@ -81,11 +81,12 @@ class HUDRenderer:
         mute_text_col = (255, 160, 200) if is_muted else (210, 180, 255)
 
         buttons_def = [
-            ("CALIBRATE", 8,   132, "[C] Dạy góc 2p",   (25, 45, 75),  (100, 210, 255)),
-            ("POMODORO",  138, 256, "[P] Pomodoro",      (25, 55, 45),  (110, 240, 175)),
-            ("MUTE",      262, 372, f"[M] {mute_label}", mute_bg,       mute_text_col),
-            ("RESET",     378, 482, "[R] Đặt lại",       (50, 42, 25),  (255, 205, 90)),
-            ("QUIT",      488, 608, "[Q] Thoát",         (65, 25, 35),  (255, 130, 130))
+            ("CALIBRATE", 6,   112, "[C] Dạy góc",     (25, 45, 75),  (100, 210, 255)),
+            ("POMODORO",  116, 218, "[P] Pomodoro",    (25, 55, 45),  (110, 240, 175)),
+            ("STATS",     222, 324, "[H] Thống kê",    (45, 35, 65),  (210, 180, 255)),
+            ("MUTE",      328, 428, f"[M] {mute_label}", mute_bg,     mute_text_col),
+            ("RESET",     432, 518, "[R] Đặt lại",     (50, 42, 25),  (255, 205, 90)),
+            ("QUIT",      522, 610, "[Q] Thoát",       (65, 25, 35),  (255, 130, 130))
         ]
 
         for (btn_id, lx1, lx2, label, bg_color, text_color) in buttons_def:
@@ -97,8 +98,8 @@ class HUDRenderer:
             # Vẽ nút bo góc phong cách pill
             d_btn.rounded_rectangle([lx1, 3, lx2, dock_h - 4], radius=6, fill=bg_color, outline=(80, 95, 120), width=1)
             # Căn giữa văn bản trong nút
-            font = self.get_font(12)
-            d_btn.text((lx1 + 10, 7), label, font=font, fill=text_color)
+            font = self.get_font(11)
+            d_btn.text((lx1 + 8, 8), label, font=font, fill=text_color)
 
         self.cached_button_strips[is_muted] = cv2.cvtColor(np.array(strip_pil), cv2.COLOR_RGB2BGR)
 
@@ -108,7 +109,7 @@ class HUDRenderer:
                 return name
         return None
 
-    def draw_hud(self, frame, result, session_duration_sec, pomodoro_info=None, is_muted=False, alert_msg=""):
+    def draw_hud(self, frame, result, session_duration_sec, pomodoro_info=None, is_muted=False, alert_msg="", show_stats=False, stats_data=None):
         h, w, _ = frame.shape
         now = time.time()
 
@@ -336,6 +337,48 @@ class HUDRenderer:
             d_msg.rounded_rectangle([0, 0, 400, 56], radius=6, fill=(20, 95, 45), outline=(255, 255, 255), width=2)
             d_msg.text((22, 16), alert_msg, font=self.get_font(14), fill=(255, 255, 255))
             msg_roi[:] = cv2.cvtColor(np.array(msg_pil), cv2.COLOR_RGB2BGR)
+
+        elif show_stats and stats_data:
+            box_w = 540
+            box_h = 246
+            cx1 = w // 2 - box_w // 2
+            cy1 = h // 2 - box_h // 2
+            cx2 = cx1 + box_w
+            cy2 = cy1 + box_h
+
+            st_roi = frame[cy1:cy2, cx1:cx2]
+            cv2.rectangle(frame, (cx1, cy1), (cx2, cy2), (180, 130, 255), 2)
+            st_pil = Image.fromarray(cv2.cvtColor(st_roi, cv2.COLOR_BGR2RGB))
+            d_st = ImageDraw.Draw(st_pil)
+            d_st.rounded_rectangle([0, 0, box_w, box_h], radius=8, fill=(16, 20, 32))
+
+            # Header
+            d_st.text((22, 12), "📊 BẢNG THỐNG KÊ HỌC TẬP & NĂNG SUẤT", font=self.get_font(15), fill=(210, 180, 255))
+            d_st.line([(22, 36), (box_w - 22, 36)], fill=(60, 70, 95), width=1)
+
+            st_today_mins = stats_data.get("today_minutes", 0)
+            st_today_score = stats_data.get("today_avg_score", 100)
+            st_streak = stats_data.get("current_streak", 0)
+            st_best = stats_data.get("best_streak", 0)
+            st_pomo = stats_data.get("total_pomodoro", 0)
+            st_goal = stats_data.get("today_goal_pct", 0)
+            st_tot_mins = stats_data.get("total_minutes", 0)
+            st_tot_sess = stats_data.get("total_sessions", 0)
+
+            d_st.text((22, 46), f"🔥 Chuỗi ngày học liên tục: {st_streak} ngày  (Kỷ lục: {st_best} ngày)", font=self.get_font(12), fill=(255, 180, 60))
+            d_st.text((22, 70), f"⏱️ Hôm nay đã học: {st_today_mins} phút  |  Tiến độ ngày: {st_goal}% (Mục tiêu 120p)", font=self.get_font(12), fill=(100, 240, 175))
+            d_st.text((22, 94), f"🎯 Độ tập trung trung bình hôm nay: {st_today_score:.0f}%", font=self.get_font(12), fill=(100, 210, 255))
+            d_st.text((22, 118), f"🍅 Tổng chu kỳ Pomodoro hoàn thành: {st_pomo} chu kỳ", font=self.get_font(12), fill=(255, 140, 180))
+
+            d_st.line([(22, 144), (box_w - 22, 144)], fill=(45, 55, 75), width=1)
+            d_st.text((22, 154), f"🏆 Lịch sử tích lũy: {st_tot_sess} phiên học  |  Tổng thời lượng: {round(st_tot_mins/60.0, 1)} giờ", font=self.get_font(11), fill=(180, 195, 215))
+            d_st.text((22, 176), f"🛡️ Đã ngăn ngừa: {stats_data.get('total_phone',0)} lần điện thoại, {stats_data.get('total_distraction',0)} lần quay mặt", font=self.get_font(11), fill=(160, 175, 195))
+
+            # Nút đóng
+            d_st.rounded_rectangle([22, box_h - 36, box_w - 22, box_h - 10], radius=4, fill=(35, 45, 65))
+            d_st.text((box_w // 2 - 120, box_h - 29), "Bấm [H] hoặc [Click bất kỳ] để đóng bảng", font=self.get_font(11), fill=(200, 220, 255))
+
+            st_roi[:] = cv2.cvtColor(np.array(st_pil), cv2.COLOR_RGB2BGR)
 
         # ================= 6. VIỀN ĐỎ BÁO ĐỘNG (NẾU ĐANG CÓ LỖI) =================
         if result.get("alert", False) and pomo_state != "BREAK":

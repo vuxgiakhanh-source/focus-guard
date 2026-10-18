@@ -12,11 +12,18 @@ except Exception:
     USE_PYGAME = False
 
 class SoundAlertManager:
-    def __init__(self, sounds_dir="sounds"):
+    def __init__(self, sounds_dir="sounds", volume=0.85):
         self.sounds_dir = sounds_dir
+        self.volume = max(0.0, min(1.0, volume))
         self.is_playing = False
         self.last_alert_time = 0
         self.lock = threading.Lock()
+
+        if USE_PYGAME:
+            try:
+                pygame.mixer.music.set_volume(self.volume)
+            except Exception:
+                pass
 
         # Ánh xạ đầy đủ các loại cảnh báo và thông báo Pomodoro
         self.voice_map = {
@@ -32,6 +39,15 @@ class SoundAlertManager:
             "YOUTUBE": os.path.join(self.sounds_dir, "youtube.mp3"),
             "WEB_DISTRACT": os.path.join(self.sounds_dir, "web_distract.mp3")
         }
+
+    def set_volume(self, volume):
+        """Điều chỉnh âm lượng thông báo (0.0 đến 1.0)"""
+        self.volume = max(0.0, min(1.0, float(volume)))
+        if USE_PYGAME:
+            try:
+                pygame.mixer.music.set_volume(self.volume)
+            except Exception:
+                pass
 
     def play_voice(self, alert_type, cooldown=3.5, force=False):
         """Phát giọng nói cảnh báo trên luồng nền"""
@@ -50,9 +66,10 @@ class SoundAlertManager:
                 audio_path = self.voice_map.get(alert_type)
                 if USE_PYGAME and audio_path and os.path.exists(audio_path):
                     pygame.mixer.music.load(audio_path)
+                    pygame.mixer.music.set_volume(self.volume)
                     pygame.mixer.music.play()
                     while pygame.mixer.music.get_busy():
-                        time.sleep(0.08)
+                        time.sleep(0.06)
                 else:
                     freq = 1600 if alert_type == "DROWSY" else 1100
                     winsound.Beep(freq, 400)
@@ -68,9 +85,11 @@ class SoundAlertManager:
         threading.Thread(target=_worker, daemon=True).start()
 
     def stop(self):
-        """Dừng phát âm thanh ngay lập tức"""
+        """Dừng phát âm thanh ngay lập tức (Zero Audio Delay)"""
         if USE_PYGAME:
             try:
                 pygame.mixer.music.stop()
             except Exception:
                 pass
+        with self.lock:
+            self.is_playing = False

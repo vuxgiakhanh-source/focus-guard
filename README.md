@@ -2,13 +2,15 @@
 
 <p align="center">
   <b>Hệ thống AI Giám Sát Học Tập & Siêu Kỷ Luật Thời Gian Thực</b><br>
-  <i>100% Offline • Siêu Tiết Kiệm CPU (~10.1ms/frame) • Thích Ứng Mọi Setup Bàn Học • Bảo Mật Tuyệt Đối</i>
+  <i>100% Offline • Chuẩn Tracking Quốc Tế (One-Euro Filter + NHTSA PERCLOS + Kinematics) • Bảo Mật Tuyệt Đối</i>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?logo=python" alt="Python">
+  <img src="https://img.shields.io/badge/Algorithm-One--Euro%20Filter-teal" alt="1-Euro Filter">
+  <img src="https://img.shields.io/badge/DMS%20Standard-NHTSA%20PERCLOS%20P80-red" alt="PERCLOS">
   <img src="https://img.shields.io/badge/MediaPipe-Face%20Landmarks-orange" alt="MediaPipe">
-  <img src="https://img.shields.io/badge/YOLOv8-Nano%20Phone%20Detect-brightgreen" alt="YOLOv8">
+  <img src="https://img.shields.io/badge/YOLOv8-Kinematic%20Phone%20Tracker-brightgreen" alt="YOLOv8">
   <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows" alt="Windows">
   <img src="https://img.shields.io/badge/UI-Cyber%20Glassmorphism-indigo" alt="Glassmorphism UI">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
@@ -18,11 +20,14 @@
 
 ## 📖 Giới Thiệu (Overview)
 
-**FocusGuard PRO** là trợ lý công nghệ AI giám sát kỷ luật học tập cá nhân bằng thị giác máy tính (Computer Vision), được thiết kế chuyên sâu để giải quyết dứt điểm các thói quen gây xao nhãng và lười biếng khi ngồi học một mình:
-* 📱 **Cầm điện thoại bấm lén** trong giờ học.
-* 😴 **Ngủ gật, nhắm mắt, ngáp dài**.
-* 🌐 **Sa đà lướt mạng xã hội** (Facebook, YouTube, TikTok...) trên máy tính.
-* 👀 **Ngoảnh mặt ra ngoài, đảo mắt đọc phao, bỏ bàn học đi nơi khác**.
+**FocusGuard PRO** là hệ thống trợ lý AI giám sát kỷ luật học tập cá nhân bằng thị giác máy tính thế hệ mới, áp dụng các thuật toán chuẩn công nghiệp từ các hệ thống giám sát người lái xe (Driver Monitoring Systems - DMS) cao cấp nhất thế giới (Tesla Autopilot, Comma.ai, Tobii Pro và Apple Screen Time):
+* 📱 **Phát hiện điện thoại trên tay bằng AI Động Học (Kinematics):** Phân biệt chính xác giữa điện thoại để tĩnh trên bàn/kệ sạc (an toàn) và điện thoại đang cầm trên tay (cảnh báo).
+* 📖 **Chế độ Đọc Sách / Ghi Chép (Desk Reading Mode):** Tự động nhận diện tư thế cúi đầu làm bài, chống 100% tình trạng báo nhầm buồn ngủ khi mắt cụp xuống đọc vở.
+* 😴 **Tiêu chuẩn Buồn Ngủ NHTSA PERCLOS (P80) & Micro-sleep:** Không báo nhầm khi chớp mắt chậm; bắt dính ngay lập tức hiện tượng gà gật lờ đờ hoặc ngủ gục.
+* 📏 **Bảo Vệ Mắt & Cột Sống (Screen Distance & Posture):** Cảnh báo khi người học ngồi quá gần màn hình (<35cm) hoặc nghiêng cổ tì cằm quá lâu.
+* 🌐 **Lọc Xao Nhãng Ứng Dụng Thông Minh:** Phát hiện Facebook, TikTok, Game (Liên Minh, Valorant, Genshin, Roblox...), cho phép xem bài giảng học tập trên YouTube và nghe nhạc Lofi.
+* 🔋 **Bình Năng Lượng Tập Trung Động (Attentional Reservoir):** Điểm số 0-100% phản hồi thời gian thực, hồi phục khi chăm chỉ và rút bớt khi xao nhãng.
+* 🔥 **Theo Dõi Chuỗi Ngày Học (Daily Streak & Mục Tiêu Ngày):** Gamify hóa quá trình tự học với bảng vàng thành tích xem trực tiếp bằng phím `H`.
 
 > [!IMPORTANT]
 > **Cam kết bảo mật 100%:** Toàn bộ mô hình AI chạy trực tiếp trên máy của bạn (Offline hoàn toàn). Webcam không lưu trữ video và không gửi bất kỳ dữ liệu nào ra ngoài Internet.
@@ -31,33 +36,33 @@
 
 ## 🌟 Tính Năng Nổi Bật (Key Features)
 
-1. **📐 Tự Động Thích Ứng Mọi Setup Bàn Học (Adaptive Study Envelope):**
-   * **Không ép buộc tư thế cứng nhắc:** Cho dù bạn đặt sách vở/màn hình phụ ở **bên trái, bên phải hay cả hai bên**, AI sẽ tự động học và thích ứng với không gian bàn học của riêng bạn.
-   * **Khoảng thời gian vàng 2 phút:** Trong 2 phút khởi tạo, AI sẽ đo chính xác biên độ góc quay tự nhiên của bạn và cấp thêm đệm tự do 15° để bạn cử động thoải mái mà không bao giờ bị báo nhầm!
+1. **🚀 Bộ Lọc One-Euro Filter (CHI 2012 - Triệt Tiêu 87% Rung Lắc, Zero Lag):**
+   * Thay thế hoàn toàn bộ lọc EMA truyền thống bằng giải thuật thích ứng tần số cắt theo vận tốc góc. Đứng yên thì số đo ổn định tuyệt đối; quay đầu thì bắt chuyển động tức thì không độ trễ.
 
-2. **📱 Bắt Quả Tang Cầm Điện Thoại (YOLOv8 Nano):**
-   * Khóa mục tiêu và đóng khung đỏ kèm tỷ lệ % tin cậy ngay khi phát hiện điện thoại trên tay.
-   * Tự động tắt quét trong giờ giải lao Pomodoro để máy luôn mát rượi.
+2. **📱 Kinematic Phone Tracker (Phân Biệt Cầm Trên Tay vs Để Trên Bàn):**
+   * Điện thoại dựng trên kệ sạc hoặc nằm yên trên bàn: Hiện hộp màu vàng lam `DIEN THOAI (TREN BAN)`, **không báo động, không trừ điểm**.
+   * Chỉ khi nhấc điện thoại lên tay hoặc vuốt màn hình: Hộp đỏ cảnh báo lập tức xuất hiện và nhắc nhở.
 
-3. **🌐 Giám Sát Mạng Xã Hội Thông Minh (Facebook / YouTube Active Monitor):**
-   * **Mở tab để đó nghe nhạc Lofi / Study Music:** Hoàn toàn **KHÔNG** bị báo động.
-   * **Thực sự dùng (cuộn feed, click chuột, gõ phím/chat) > 2.5s:** AI phát cảnh báo giọng nói riêng, trừ điểm tập trung và bật thông báo Windows Toast.
+3. **📚 Chế Độ Đọc Sách / Viết Bài (Desk Reading Mode):**
+   * Khi cúi đầu nhìn vở trên bàn ($-38° \le \text{pitch} \le -8°$), AI chuyển sang chế độ `● ĐANG ĐỌC / VIẾT BÀI`, tự động hạ ngưỡng EAR và bỏ qua đảo mắt để bạn tập trung làm bài thi mà không bao giờ bị làm phiền.
 
-4. **⏱ Tích Hợp Đồng Hồ Pomodoro (25 phút học / 5 phút nghỉ):**
-   * Bấm nút **`[⏱ Pomodoro]`** trên dock hoặc phím **`P`** để bật/tắt.
-   * Đóng băng thời gian chính xác khi tạm dừng. Hết giờ học có chuông nhắc nghỉ; hết giờ nghỉ có chuông gọi học bài.
+4. **👁 Đo Độ Nhắm Mắt Chuẩn NHTSA PERCLOS & Micro-sleep:**
+   * Tính toán tỷ lệ mắt nhắm trong cửa sổ trượt 12 giây kết hợp bộ đếm vi giấc ngủ (Micro-sleep > 2.6s). Người đeo kính gọng dày hay mắt híp đều được cân chỉnh riêng biệt.
 
-5. **👓 Tự Đo Độ Mở Mắt Cho Người Đeo Kính & Mắt Híp:**
-   * Trong 2 phút đo ban đầu, AI tự đo kích thước độ mở mí mắt tự nhiên của bạn để thiết lập ngưỡng `ear_threshold` tối ưu riêng, triệt tiêu 100% việc báo nhầm buồn ngủ khi đeo kính phản quang.
+5. **👀 Cảnh Báo Khoảng Cách Mắt & Tư Thế Cổ (Screen Distance):**
+   * Tự động đo khoảng cách giữa 2 mắt đến camera. Ngồi quá sát màn hình (<35cm) sẽ có thông báo nhắc lùi xa $\ge 50\text{cm}$ để chống cận thị và gù lưng.
 
-6. **👁 Iris Gaze Tracking Chuẩn Xác Cao:**
-   * Theo dõi tâm con ngươi thời gian thực. Chỉ kích hoạt cảnh báo liếc mắt khi đầu hướng thẳng về phía trước (`|yaw| < 25°`) mà mắt liếc trộm sang bên cạnh.
+6. **⏱ Pomodoro Chuẩn Quốc Tế Có Nghỉ Dài (25p học / 5p nghỉ / 15p nghỉ sâu):**
+   * Cứ sau mỗi 4 chu kỳ học tập trung liên tiếp, hệ thống tự động thưởng phiên **Nghỉ Dài 15 phút** để não bộ tái tạo năng lượng.
 
-7. **📊 Giao Diện Kính Mờ Cyber-Glassmorphism & Biểu Đồ Sparkline:**
-   * Không gian nhìn siêu thoáng (> 82% camera), hiển thị đường biểu đồ Sparkline mini dao động thời gian thực cùng thanh dock nút bấm bo tròn phong cách hiện đại.
+7. **📊 Bảng Vàng Thống Kê & Chuỗi Học Tập (Daily Streak Modal):**
+   * Bấm phím **`H`** hoặc click nút `[H] Thống kê` trên dock để mở ngay bảng tổng kết: chuỗi ngày học liên tục (Streak), tiến độ mục tiêu 120 phút/ngày và số lần vượt qua cám dỗ.
 
-8. **🔔 Thông Báo Đa Tầng (Windows Toast & Voice Alerts):**
-   * Ngay cả khi thu nhỏ cửa sổ FocusGuard để làm bài trên Word hay trình duyệt, popup thông báo Windows Toast vẫn bật lên kịp thời ở góc phải màn hình.
+8. **🌐 Nhận Diện Game & Mạng Xã Hội (Facebook, YouTube Học Tập, Game):**
+   * Tự động nhận diện khi mở game hoặc mạng xã hội. Nếu đang xem video bài giảng (IELTS, Toán, Lập trình, Lofi...) trên YouTube, AI nhận biết đó là học tập và không báo động.
+
+9. **🔇 Ngắt Âm Thanh Tức Thì (Zero Audio Delay):**
+   * Ngay khoảnh khắc bạn quay lại bài học hoặc đặt điện thoại xuống, âm thanh cảnh báo lập tức dừng ngay mà không phát rền rĩ thêm một giây nào.
 
 ---
 
@@ -83,7 +88,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-> **Ghi chú:** Trọng số AI (`face_landmarker.task` 3.7MB, `yolov8n.pt` 6.5MB) và toàn bộ âm thanh cảnh báo đã đính kèm sẵn trong kho lưu trữ — bạn không cần tải thêm bất kỳ file nào từ bên ngoài!
+> **Ghi chú:** Trọng số AI (`face_landmarker.task`, `yolov8n.pt`) và toàn bộ âm thanh cảnh báo đã đính kèm sẵn trong kho lưu trữ — bạn không cần tải thêm bất kỳ file nào từ bên ngoài!
 
 ---
 
@@ -96,52 +101,10 @@ powershell -ExecutionPolicy Bypass -File install_shortcut.ps1
 ```
 Sau đó ra ngoài Desktop, nhấp đúp vào biểu tượng **FocusGuard PRO** (khởi động êm ái trong 1.5s, không hiện cửa sổ cmd đen).
 
-### Cách 2: Khởi Chạy Bằng File Batch
-* Nhấp đúp vào file `FocusGuard.bat` trong thư mục.
-
-### Cách 3: Khởi Chạy Bằng Lệnh
+### Cách 2: Khởi Chạy Bằng Lệnh
 ```powershell
 python main.py
 ```
-
----
-
-## 📘 HƯỚNG DẪN SỬ DỤNG CHI TIẾT TỪ A - Z (User Guide)
-
-### 🎯 Quy trình 1 buổi học chuẩn:
-
-#### Bước 1: Khởi động & Cân chỉnh camera
-* Mở app lên. Đặt laptop hoặc webcam ở góc bạn thấy thoải mái nhất (thẳng mặt hoặc chéo bên đều được, chỉ cần camera nhìn thấy khuôn mặt bạn).
-
-#### Bước 2: Dạy AI góc học tập & Dáng mắt (⭐ ĐẶC BIỆT DÀNH CHO LẦN ĐẦU)
-> [!IMPORTANT]
-> **Khoảng thời gian vàng 2 phút (First-Time Calibration):**  
-> Khi khởi chạy lần đầu tiên, FocusGuard sẽ **tự động kích hoạt chế độ học góc 2 phút** (hoặc bạn có thể bấm nút **`[🎯 Dạy góc (2p)]`**).  
-> **Bạn hãy cố gắng ngồi học tập trung cao độ nhất có thể trong đúng 2 phút này** (ngồi thẳng lưng, đọc sách, nhìn bài nghiêm túc, không bấm điện thoại hay quay ngang ngửa).
-> 
-> 👉 **Tại sao 2 phút này lại quyết định tất cả?**
-> 1. **Ghi nhớ góc học tập cá nhân:** AI lấy mẫu hàng trăm khung hình tư thế nghiêm túc của bạn (dù bạn để sách bên trái hay bên phải) để làm thước đo chuẩn riêng cho bàn học của bạn.
-> 2. **Cân chỉnh mắt cho người đeo kính:** AI tự đo kích thước con ngươi và độ mở mí mắt tự nhiên của bạn để tính ra ngưỡng nhắm mắt `ear_threshold` chuẩn xác 100%, chống báo nhầm buồn ngủ.
-> 3. **Lưu vĩnh viễn:** Sau 2 phút, AI sẽ tự động lưu cấu hình vào máy. Từ các buổi học sau trở đi, bạn mở app lên là học ngay lập tức!
-
-#### Bước 3: Học bài & Kỷ luật tự giác
-Trong quá trình học, AI sẽ âm thầm giám sát:
-* 😴 **Nếu bạn nhắm mắt quá 2 giây:** Giọng nói tiếng Việt sẽ nhắc *"Bạn đang buồn ngủ, hãy tập trung!"* và viền đỏ màn hình nhấp nháy.
-* 📱 **Nếu bạn nhấc điện thoại lên tay:** Khung màu đỏ lập tức khóa chặt vị trí chiếc điện thoại và phát loa cảnh báo.
-* 🌐 **Nếu bạn mở Facebook/YouTube lướt:** Sau 2.5 giây thao tác chuột/phím liên tục, AI sẽ lên tiếng nhắc nhở quay lại học và trừ điểm tập trung.
-* ☕ **Bật Pomodoro:** Bấm **`[⏱ Pomodoro]`** để vào chu kỳ chuẩn 25 phút học tập trung cao độ.
-
-#### Bước 4: Nghỉ giải lao (Pomodoro Break)
-* Khi hết 25 phút học, chuông báo sẽ reo và màn hình chuyển sang tông **màu tím hồng thư giãn**.
-* Trong 5 phút này: Toàn bộ cảnh báo camera, điện thoại và lướt web sẽ **tự động tắt 100%**. Bạn có thể thoải mái bấm điện thoại, nghe nhạc, giải trí.
-* Khi hết 5 phút nghỉ: Giọng nói sẽ thông báo hết giờ nghỉ để bạn quay lại bàn học!
-
-#### Bước 5: Kết thúc phiên học & Xem báo cáo
-* Khi học xong: Bấm nút **`[✕ Thoát & Lưu]`** (hoặc nhấn phím **`Q`** / nút **`X`** cửa sổ).
-* Hệ thống sẽ tự động:
-  1. Bắn thông báo Windows Toast tổng kết thời gian học và điểm tập trung.
-  2. In bảng báo cáo chi tiết ra màn hình (số lần cầm điện thoại, số lần lướt mạng xã hội, chu kỳ Pomodoro).
-  3. Tự động cộng dồn vào lịch sử học tập tích lũy (`focus_history.json`).
 
 ---
 
@@ -151,8 +114,9 @@ Tất cả các chức năng đều hỗ trợ **Click chuột trực tiếp** l
 
 | Nút Bấm Trên Dock | Phím Tắt | Chức Năng |
 | :---: | :---: | :--- |
-| **`[C] Dạy góc 2p`** | **`C`** | Bắt đầu đo góc ngồi học và dáng mắt trong 2 phút (bấm lại lần nữa để hoàn tất sớm) |
-| **`[P] Pomodoro`** | **`P`** | Bật / Tắt chu kỳ đếm giờ Pomodoro (25 phút học / 5 phút nghỉ) |
+| **`[C] Dạy góc`** | **`C`** | Bắt đầu đo góc ngồi học và dáng mắt trong 2 phút (bấm lại để hoàn tất sớm) |
+| **`[P] Pomodoro`** | **`P`** | Bật / Tắt chu kỳ đếm giờ Pomodoro (25p học / 5p nghỉ / 15p nghỉ dài sau 4 hiệp) |
+| **`[H] Thống kê`** | **`H`** | Bật / Tắt bảng vàng thống kê thành tích, chuỗi ngày học (Daily Streak) |
 | **`[M] Âm thanh`** | **`M`** | Tắt / Mở âm thanh giọng nói cảnh báo (hữu ích khi ngồi thư viện) |
 | **`[R] Đặt lại`** | **`R`** | Đặt lại điểm tập trung 100% và đồng hồ thời gian học |
 | **`[Q] Thoát`** | **`Q`** / **`Esc`** | Thoát ứng dụng an toàn, lưu lịch sử và hiển thị báo cáo tổng kết |
@@ -161,30 +125,20 @@ Tất cả các chức năng đều hỗ trợ **Click chuột trực tiếp** l
 
 ## ❓ Câu Hỏi Thường Gặp (FAQ)
 
-**Q1: Ứng dụng có làm nóng máy hay tốn pin khi chạy lâu không?**  
-* **A:** Hoàn toàn không! FocusGuard PRO chạy với tần suất xử lý tối ưu ~10.1ms/frame (chỉ tốn ~30% chu kỳ một luồng CPU), các luồng AI chạy đơn luồng độc lập, đảm bảo máy luôn êm mát, không hú quạt và tiết kiệm pin tối đa.
+**Q1: Điện thoại để trên giá đỡ trên bàn có bị kêu chuông không?**  
+* **A:** Hoàn toàn không! Bộ lọc động học Kinematic Tracker sẽ nhận diện điện thoại đứng yên trên bàn và hiển thị nhãn màu vàng lam an toàn `DIEN THOAI (TREN BAN)`. Chỉ khi bạn cầm lên tay sử dụng thì mới cảnh báo.
 
-**Q2: Nếu tôi lỡ tay click mở shortcut nhiều lần thì sao?**  
-* **A:** Ứng dụng tích hợp khóa đơn **Windows Named Mutex**. Nếu có phiên bản đang chạy ngầm, cửa sổ thứ 2 sẽ tự động nhận diện, đưa cửa sổ đang học lên phía trước màn hình và tự đóng ngay lập tức, ngăn chặn 100% tình trạng nghẽn webcam hay mở trùng lặp.
+**Q2: Khi cúi đầu đọc sách hoặc ghi chép có bị báo buồn ngủ oan không?**  
+* **A:** Hoàn toàn không! Chế độ Desk Reading Mode tự động phát hiện góc cúi làm bài, nới lỏng góc nhìn mí mắt và cộng điểm tập trung tối đa cho bạn.
 
-**Q3: Nếu tôi đóng nắp che camera (E-Shutter) hoặc phòng tối thì app xử lý thế nào?**  
-* **A:** AI tích hợp cảm biến phát hiện màn hình tối đen. Nếu nắp camera đóng, app sẽ hiện cảnh báo vàng thân thiện nhắc bạn gạt mở nắp camera và tắt hoàn toàn giọng nói giục quay lại bàn học để không làm phiền bạn.
+**Q3: Tôi xem video bài giảng hoặc giải toán trên YouTube có bị phạt không?**  
+* **A:** FocusGuard PRO trang bị bộ lọc từ khóa giáo dục thông minh (IELTS, Toán, Văn, Tutorial, Lập trình, Lofi study...). Nếu xem video học tập, AI nhận biết đó là học và không phạt điểm.
 
-**Q4: Nếu tôi ngồi học ở thư viện hoặc quán cà phê thì làm sao?**  
-* **A:** Bạn chỉ cần click nút **`[M] Âm thanh`** (hoặc nhấn phím **`M`**) để chuyển sang chế độ im lặng `[MUTE]`. Mọi cảnh báo sẽ chuyển sang dạng viền đỏ trực quan trên màn hình và popup Windows Toast, không gây ồn ào xung quanh.
+**Q4: Nếu tôi mở 2 ứng dụng cùng lúc thì sao?**  
+* **A:** Ứng dụng tích hợp khóa đơn **Windows Named Mutex**. Nếu có phiên bản đang chạy ngầm, cửa sổ thứ 2 sẽ tự động nhận diện và đưa cửa sổ đang học lên phía trước màn hình, chống nghẽn webcam.
 
-**Q5: Tôi đeo kính gọng dày hay bị báo buồn ngủ oan thì chỉnh thế nào?**  
-* **A:** Bạn chỉ cần bấm nút **`[C] Dạy góc 2p`** (hoặc phím **`C`**). AI sẽ đo độ mở mắt xuyên qua tròng kính của bạn trong lúc học và tự động tính toán ngưỡng nhắm mắt chuẩn xác riêng cho bạn.
-
-**Q6: Dữ liệu học tập được lưu ở đâu?**  
-* **A:** Lịch sử học tập được lưu cục bộ ngay trong máy (file `focus_history.json`). File này đã được thêm vào `.gitignore` để đảm bảo dữ liệu riêng tư của bạn không bao giờ bị lộ lên GitHub.
-
-**Q7: Nếu tôi đổi góc học tập, chuyển bàn học, hoặc đổi chỗ ngồi thì làm sao?**  
-* **A:** Cực kỳ đơn giản! Bạn chỉ cần ngồi vào chỗ mới và bấm nút **`[C] Dạy góc 2p`** (hoặc nhấn phím **`C`**). AI sẽ ngay lập tức đo lại góc ngồi mới và tự động lưu đè cấu hình mới vào máy.  
-* *Mẹo:* Nếu không muốn đợi hết 2 phút, chỉ cần ngồi học theo góc mới khoảng 15-20 giây rồi **bấm lại phím `C` một lần nữa** là hệ thống sẽ lưu và hoàn tất ngay tức thì!
-
-**Q8: Bàn học của tôi để sách bên phải hoặc dùng 2 màn hình thì AI có hiểu không?**  
-* **A:** Hiểu 100%! Trong 2 phút đo góc ban đầu, bất kể bạn quay sang đâu để đọc bài, AI đều ghi nhận và tự động mở rộng vùng học tập sang phía đó kèm 15° đệm an toàn, không bao giờ ép bạn phải để sách ở một bên cố định.
+**Q5: Nếu phòng học tối hoặc chỉ bật đèn bàn thì AI có nhận được không?**  
+* **A:** FocusGuard tích hợp bộ xử lý kép Gamma LUT Correction kết hợp thuật toán thích ứng ánh sáng CLAHE, tự động nâng sáng vùng tối vi mô mà không làm nhiễu hình ảnh, giúp MediaPipe nhận diện chính xác ngay cả trong phòng tối.
 
 ---
 

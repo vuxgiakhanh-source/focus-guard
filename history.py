@@ -3,7 +3,7 @@ import os
 import json
 import time
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Đảm bảo in tiếng Việt chuẩn trên Windows console
 try:
@@ -16,8 +16,9 @@ HISTORY_FILE = "focus_history.json"
 
 class SessionHistoryManager:
     """Quản lý lưu trữ và phân tích lịch sử các phiên học tập FocusGuard"""
-    def __init__(self, history_file=HISTORY_FILE):
+    def __init__(self, history_file=HISTORY_FILE, daily_goal_mins=120):
         self.history_file = history_file
+        self.daily_goal_mins = daily_goal_mins
         self.history_data = self._load_history()
 
     def _load_history(self):
@@ -69,9 +70,48 @@ class SessionHistoryManager:
         self._save_history()
         return session_entry
 
-    def get_summary_stats(self):
-        """Tính toán thống kê tổng quan toàn bộ và hôm nay"""
+    def calculate_streak(self):
+        """Tính chuỗi ngày học tập liên tục (Daily Study Streak)"""
         sessions = self.history_data.get("sessions", [])
+        if not sessions:
+            return 0, 0
+
+        unique_dates = sorted(list(set(s.get("date") for s in sessions if "date" in s)))
+        if not unique_dates:
+            return 0, 0
+
+        date_objs = [datetime.strptime(d, "%Y-%m-%d").date() for d in unique_dates]
+        
+        # Tính chuỗi hiện tại
+        today = datetime.now().date()
+        yesterday = today - timedelta(days=1)
+        
+        current_streak = 0
+        check_date = today if (today in date_objs) else (yesterday if yesterday in date_objs else None)
+        
+        if check_date is not None:
+            while check_date in date_objs:
+                current_streak += 1
+                check_date -= timedelta(days=1)
+
+        # Tính chuỗi kỷ lục (Best Streak)
+        max_streak = 0
+        temp_streak = 1
+        for i in range(1, len(date_objs)):
+            if date_objs[i] == date_objs[i-1] + timedelta(days=1):
+                temp_streak += 1
+            else:
+                max_streak = max(max_streak, temp_streak)
+                temp_streak = 1
+        max_streak = max(max_streak, temp_streak) if date_objs else 0
+
+        return current_streak, max_streak
+
+    def get_summary_stats(self):
+        """Tính toán thống kê tổng quan toàn bộ, hôm nay và chuỗi học tập"""
+        sessions = self.history_data.get("sessions", [])
+        current_streak, best_streak = self.calculate_streak()
+
         if not sessions:
             return {
                 "total_sessions": 0,
@@ -80,6 +120,9 @@ class SessionHistoryManager:
                 "today_minutes": 0.0,
                 "today_avg_score": 100.0,
                 "today_sessions": 0,
+                "today_goal_pct": 0.0,
+                "current_streak": 0,
+                "best_streak": 0,
                 "total_phone": 0,
                 "total_distraction": 0,
                 "total_drowsy": 0,
@@ -95,6 +138,7 @@ class SessionHistoryManager:
         today_mins = sum(s.get("duration_minutes", 0) for s in today_sessions)
         today_scores = [s.get("focus_score", 100) for s in today_sessions]
         today_avg = round(sum(today_scores) / len(today_scores), 1) if today_scores else 100.0
+        today_goal_pct = min(100.0, round((today_mins / max(1, self.daily_goal_mins)) * 100.0, 1))
 
         total_phone = sum(s.get("phone_events", 0) for s in sessions)
         total_dist = sum(s.get("distraction_events", 0) for s in sessions)
@@ -108,6 +152,9 @@ class SessionHistoryManager:
             "today_sessions": len(today_sessions),
             "today_minutes": round(today_mins, 1),
             "today_avg_score": today_avg,
+            "today_goal_pct": today_goal_pct,
+            "current_streak": current_streak,
+            "best_streak": best_streak,
             "total_phone": total_phone,
             "total_distraction": total_dist,
             "total_drowsy": total_drowsy,
@@ -135,7 +182,9 @@ class SessionHistoryManager:
         print(f" 📈 TỔNG KẾT HÔM NAY ({datetime.now().strftime('%d/%m/%Y')}):")
         print(f"    - Số phiên đã học   : {stats['today_sessions']} phiên")
         print(f"    - Tổng thời gian    : {stats['today_minutes']} phút ({round(stats['today_minutes']/60.0, 1)} giờ)")
+        print(f"    - Mục tiêu ngày     : {stats['today_goal_pct']}% / {self.daily_goal_mins} phút")
         print(f"    - Điểm tập trung TB : {stats['today_avg_score']}%")
+        print(f"    - Chuỗi học liên tục: 🔥 {stats['current_streak']} ngày (Kỷ lục: {stats['best_streak']} ngày)")
         print("-" * 65)
         print(f" 🏆 TỔNG LỊCH SỬ TÍCH LŨY:")
         print(f"    - Tổng thời gian học: {stats['total_minutes']} phút ({round(stats['total_minutes']/60.0, 1)} giờ)")
