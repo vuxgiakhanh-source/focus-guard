@@ -16,8 +16,8 @@ class WindowsToastManager:
         self.last_toast_time = {}
         self.lock = threading.Lock()
 
-    def show_toast(self, title, message, toast_key=None, cooldown=12.0):
-        """Bật thông báo Toast popup ở góc màn hình (luồng nền, có cooldown)"""
+    def show_toast(self, title, message, toast_key=None, cooldown=12.0, silent=False):
+        """Bật thông báo Toast popup ở góc màn hình (luồng nền, có cooldown, hỗ trợ chế độ im lặng)"""
         if not HAS_WINOTIFY:
             return
 
@@ -37,7 +37,10 @@ class WindowsToastManager:
                     msg=message,
                     duration="short"
                 )
-                notif.set_audio(audio.Default, loop=False)
+                if silent:
+                    notif.set_audio(audio.Silent, loop=False)
+                else:
+                    notif.set_audio(audio.Default, loop=False)
                 notif.show()
             except Exception:
                 pass

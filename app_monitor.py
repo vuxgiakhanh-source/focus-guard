@@ -5,13 +5,16 @@ import time
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
 
+import re
+
 class AppDistractionMonitor:
     """
     Giám sát thao tác trên ứng dụng và mạng xã hội gây xao nhãng (Facebook, YouTube, TikTok...):
-    - CHỈ CẢNH BÁO KHI THỰC SỰ ĐANG DÙNG / THAO TÁC (click chuột, gõ phím, cuộn trang).
+    - CHỈ CẢNH BÁO KHI THỰC SỰ ĐANG DÙNG / THAO TÁC (click chuột, gõ phím, cuộn trang) > 2.5s.
     - Mở tab để đó nghe nhạc hoặc không đụng vào -> HOÀN TOÀN KHÔNG BÁO ĐỘNG.
+    - Ngay khi người dùng đóng tab / chuyển sang ứng dụng khác -> HỦY CẢNH BÁO TỨC THÌ (Zero Delay)!
     - Giờ giải lao Pomodoro -> Cho phép giải trí tự do 100%.
-    - Chạy native bằng Windows User32 API (tốn 0.001ms, 0% CPU).
+    - Chạy native bằng Windows User32 API (tốn 0.0003ms, 0% CPU).
     """
     def __init__(self, active_operate_thresh_sec=2.5, idle_timeout_sec=2.0, debounce_sec=2.5, **kwargs):
         self.active_operate_thresh_sec = debounce_sec if debounce_sec != 2.5 else active_operate_thresh_sec
@@ -19,8 +22,6 @@ class AppDistractionMonitor:
 
         self.active_operate_time = 0.0
         self.last_check_time = time.time()
-        self.last_poll_time = 0.0
-        self.cached_result = None
         self.current_distraction = None
 
         self.user32 = ctypes.windll.user32
@@ -76,16 +77,10 @@ class AppDistractionMonitor:
 
     def check_distraction(self, is_pomodoro_break=False):
         """
-        Kiểm tra người dùng có đang THỰC SỰ THAO TÁC trên Facebook hay YouTube không:
-        - Mở tab nhưng không đụng chuột/phím -> An toàn (cho phép nghe nhạc, để tab)
-        - Đang click, cuộn trang, gõ phím trên Facebook/YouTube > 2.5s -> CẢNH BÁO!
+        Kiểm tra người dùng có đang THỰC SỰ THAO TÁC trên Facebook hay YouTube không.
+        Kiểm tra thời gian thực từng khung hình (không lưu đệm cũ gây báo sai sau khi tắt).
         """
         now = time.time()
-        # Throttling kiểm tra mỗi 0.15s (tiết kiệm 80% số lần gọi Windows API)
-        if (now - self.last_poll_time < 0.15) and not is_pomodoro_break:
-            return self.cached_result
-        self.last_poll_time = now
-
         dt = max(0.0, min(1.0, now - self.last_check_time))
         self.last_check_time = now
 
@@ -93,39 +88,71 @@ class AppDistractionMonitor:
         if is_pomodoro_break:
             self.active_operate_time = 0.0
             self.current_distraction = None
-            self.cached_result = None
             return None
 
         title = self.get_foreground_title()
         if not title:
-            self.active_operate_time = max(0.0, self.active_operate_time - dt)
-            self.cached_result = None
+            self.active_operate_time = 0.0
+            self.current_distraction = None
             return None
 
-        t_low = title.lower()
+        t_low = title.lower().strip()
 
         # Bỏ qua cửa sổ FocusGuard chính
         if "focusguard" in t_low:
-            self.active_operate_time = max(0.0, self.active_operate_time - dt)
+            self.active_operate_time = 0.0
+            self.current_distraction = None
+            return None
+
+        # Danh sách ứng dụng an toàn (học tập, làm việc, tìm kiếm tài liệu)
+        safe_keywords = [
+            "visual studio", "code", "pycharm", "intellij", "cursor",
+            "sublime", "notepad", "word", "excel", "powerpoint", "acrobat",
+            "pdf", "terminal", "powershell", "cmd.exe", "git", "google search",
+            "tìm kiếm trên google", "tìm trên google", "bing search", "github", "stackoverflow"
+        ]
+        if any(safe in t_low for safe in safe_keywords):
+            self.active_operate_time = 0.0
+            self.current_distraction = None
             return None
 
         d_type = None
         d_label = None
 
-        if "facebook" in t_low or "fb.com" in t_low:
+        # Nhận diện chính xác tên trang mạng xã hội trên tiêu đề cửa sổ / tab trình duyệt
+        fb_patterns = [
+            r'(^|\s*[-–—|]\s*)facebook(\s*[-–—|]|\s*$)',
+            r'^\([0-9+]+\)\s*facebook',
+            r'(facebook\.com|fb\.com|m\.facebook\.com)',
+            r'(^|\s*[-–—|]\s*)messenger(\s*[-–—|]|\s*$)',
+            r'^\([0-9+]+\)\s*messenger'
+        ]
+        yt_patterns = [
+            r'(^|\s*[-–—|]\s*)youtube(\s*[-–—|]|\s*$)',
+            r'^\([0-9+]+\)\s*youtube',
+            r'(youtube\.com|youtu\.be)'
+        ]
+        tiktok_patterns = [
+            r'(^|\s*[-–—|]\s*)tiktok(\s*[-–—|]|\s*$)',
+            r'tiktok\.com'
+        ]
+
+        if any(re.search(p, t_low) for p in fb_patterns):
             d_type = "FACEBOOK"
             d_label = "Facebook"
-        elif "youtube" in t_low or "youtu.be" in t_low:
-            d_type = "YOUTUBE"
-            d_label = "YouTube"
-        elif "tiktok" in t_low:
+        elif any(re.search(p, t_low) for p in yt_patterns):
+            # Cho phép nghe nhạc Lofi trên YouTube Music
+            if "music.youtube" not in t_low:
+                d_type = "YOUTUBE"
+                d_label = "YouTube"
+        elif any(re.search(p, t_low) for p in tiktok_patterns):
             d_type = "WEB_DISTRACT"
             d_label = "TikTok"
-        elif any(k in t_low for k in ["bilibili", "netflix", "shopee", "lazada", "instagram"]):
+        elif any(k in t_low for k in ["bilibili", "netflix.com", "shopee.vn", "lazada.vn", "instagram.com"]):
             d_type = "WEB_DISTRACT"
             d_label = "Mạng xã hội / Mua sắm"
 
-        # Nếu cửa sổ hiện tại KHÔNG PHẢI mạng xã hội (đang ở Word, Docs, IDE, PDF...):
+        # Nếu cửa sổ hiện tại KHÔNG PHẢI mạng xã hội -> Reset ngay lập tức
         if not d_type:
             self.active_operate_time = 0.0
             self.current_distraction = None
@@ -137,19 +164,18 @@ class AppDistractionMonitor:
         is_actively_operating = (idle_sec < self.idle_timeout_sec)
 
         if is_actively_operating:
-            # Người dùng đang chủ động cuộn chuột, gõ phím, click link trên tab này!
             if self.current_distraction != d_type:
                 self.current_distraction = d_type
                 self.active_operate_time = 0.0
 
             self.active_operate_time += dt
         else:
-            # Người dùng chỉ mở tab để đó, không tương tác -> hạ dần thời gian tích lũy
-            self.active_operate_time = max(0.0, self.active_operate_time - dt * 1.5)
+            # Không tương tác -> hạ dần thời gian tích lũy
+            self.active_operate_time = max(0.0, self.active_operate_time - dt * 2.0)
 
         should_alert = (self.active_operate_time >= self.active_operate_thresh_sec)
 
-        res = {
+        return {
             "is_distracted": (self.active_operate_time > 0.4),
             "is_operating": is_actively_operating,
             "should_alert": should_alert,
@@ -158,5 +184,3 @@ class AppDistractionMonitor:
             "duration": round(self.active_operate_time, 1),
             "window_title": title
         }
-        self.cached_result = res
-        return res

@@ -177,6 +177,7 @@ def run_focus_guard():
     phone_events = 0
     web_events = 0
     last_alert_state = False
+    last_web_alerting = False
 
     alert_msg = ""
     alert_msg_time = 0
@@ -225,7 +226,15 @@ def run_focus_guard():
 
         # 3.5 Giám sát thao tác trên Facebook / YouTube / Mạng xã hội trên máy tính
         web_distract = app_monitor.check_distraction(is_pomodoro_break=is_break)
-        if web_distract and web_distract["should_alert"]:
+        is_web_alerting = bool(web_distract and web_distract["should_alert"])
+
+        # Nếu người dùng vừa tắt Facebook/YouTube -> Dừng cảnh báo giọng nói NGAY LẬP TỨC (Zero Lag)!
+        if last_web_alerting and not is_web_alerting:
+            alert_mgr.stop()
+
+        last_web_alerting = is_web_alerting
+
+        if is_web_alerting:
             if result.get("status") == "FOCUSED":
                 detector.focused_frames = max(0, detector.focused_frames - 1)
                 result["focus_score"] = detector.get_focus_score()
@@ -272,16 +281,16 @@ def run_focus_guard():
                 if alert_type in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
                     web_events += 1
                     target_name = web_distract['label'] if web_distract else "mạng xã hội"
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"⚠️ Bạn đang thao tác trên {target_name} trong giờ học! Hãy quay lại bài nhé!", "web_alert", cooldown=8.0)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"⚠️ Bạn đang thao tác trên {target_name} trong giờ học! Hãy quay lại bài nhé!", "web_alert", cooldown=8.0, silent=is_muted)
                 elif alert_type == "PHONE":
                     phone_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "⚠️ Phát hiện bạn đang cầm điện thoại trên tay!", "phone_alert", cooldown=10.0)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "⚠️ Phát hiện bạn đang cầm điện thoại trên tay!", "phone_alert", cooldown=10.0, silent=is_muted)
                 elif result["status"] == "DROWSY":
                     drowsy_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "😴 Cảnh báo buồn ngủ! Hãy đứng dậy vận động hoặc rửa mặt!", "drowsy_alert", cooldown=10.0)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", "😴 Cảnh báo buồn ngủ! Hãy đứng dậy vận động hoặc rửa mặt!", "drowsy_alert", cooldown=10.0, silent=is_muted)
                 elif result["status"] in ["DISTRACTED", "AWAY"]:
                     distraction_events += 1
-                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"👀 {result['reason']}", "distract_alert", cooldown=10.0)
+                    toast_mgr.show_toast("FocusGuard Cảnh Báo", f"👀 {result['reason']}", "distract_alert", cooldown=10.0, silent=is_muted)
                 last_alert_state = True
 
             if not is_muted and result.get("alert_type"):
