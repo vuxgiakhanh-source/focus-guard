@@ -661,7 +661,7 @@ class FocusDetector:
             if self.prev_small_gray is not None:
                 diff = cv2.absdiff(small_gray, self.prev_small_gray)
                 mean_diff = float(np.mean(diff))
-                if mean_diff >= 18.0:
+                if mean_diff >= 36.0:
                     self.camera_shifted_time = now
             self.prev_small_gray = small_gray
         except Exception:
@@ -908,31 +908,34 @@ class FocusDetector:
         self.last_seen_reading = is_reading_desk
 
         # 5b. TỰ ĐỘNG PHÁT HIỆN GÓC CAM THAY ĐỔI & TÁI XÉT GÓC HỌC TỨC THÌ (INSTANT ADAPTATION)
-        # Tự động nhận diện khi xoay/chỉnh webcam, nâng hạ màn hình laptop, hoặc xoay ghế ngồi
-        cur_anchor_yaw = (self.study_zone.get("yaw_min", -65.0) + self.study_zone.get("yaw_max", 65.0)) / 2.0
-        cur_anchor_pitch = (self.study_zone.get("pitch_min", -70.0) + self.study_zone.get("pitch_max", 35.0)) / 2.0
+        # Chỉ kích hoạt khi THỰC SỰ có sự thay đổi lớn:
+        # 1. Camera bị dịch chuyển vật lý (was_camera_shifted)
+        # 2. Hoặc người dùng đổi góc ngồi khiến tư thế bị văng RA NGOÀI vùng học hiện tại
+        zone_yaw_min = self.study_zone.get("yaw_min", -60.0)
+        zone_yaw_max = self.study_zone.get("yaw_max", 60.0)
+        zone_pitch_min = self.study_zone.get("pitch_min", -68.0)
+        zone_pitch_max = self.study_zone.get("pitch_max", 32.0)
 
-        delta_yaw = yaw - cur_anchor_yaw
-        delta_pitch = pitch - cur_anchor_pitch
+        # Nếu người dùng đang ngồi trong vùng học hợp lệ thì TUYỆT ĐỐI KHÔNG tái xét góc!
+        is_inside_zone = (zone_yaw_min <= yaw <= zone_yaw_max) and (zone_pitch_min <= pitch <= zone_pitch_max)
 
         was_camera_shifted = (now - getattr(self, "camera_shifted_time", 0.0) <= 2.5)
-        angle_shifted = (abs(delta_yaw) >= 12.0) or (abs(delta_pitch) >= 10.0)
+        # Bị văng ra ngoài vùng học hợp lệ nhưng vẫn hướng về bàn học (|yaw| <= 40)
+        out_of_zone_stance = (not is_inside_zone) and (abs(yaw) <= 40.0)
 
-        # Nếu không phải dịch chuyển camera vật lý, chỉ cho phép học tư thế mới nếu góc quay vẫn hướng về bàn học (|yaw| <= 35 độ)
-        valid_study_direction = was_camera_shifted or (abs(yaw) <= 35.0)
-
-        is_candidate_new_stance = (was_camera_shifted or angle_shifted) and valid_study_direction and (not has_phone) and (avg_ear >= 0.14) and (mar <= 0.60) and (pitch >= -68.0)
+        should_consider_adaptation = (was_camera_shifted or out_of_zone_stance) and (not has_phone) and (avg_ear >= 0.14) and (mar <= 0.60) and (pitch >= -68.0)
 
         face_sample_time = float(data.get("timestamp", now))
-        if is_candidate_new_stance and (now - self.last_auto_adapt_time >= 4.0) and (face_sample_time > self.last_auto_zone_sample_time):
+        # Cooldown tối thiểu 30 giây giữa các lần tự động tái xét để triệt tiêu hoàn toàn hiện tượng spam thông báo
+        if should_consider_adaptation and (now - self.last_auto_adapt_time >= 30.0) and (face_sample_time > self.last_auto_zone_sample_time):
             self.last_auto_zone_sample_time = face_sample_time
             self.auto_zone_buffer.append((face_sample_time, yaw, pitch, avg_ear))
             max_buf_sec = 2.5 if was_camera_shifted else 3.5
             self.auto_zone_buffer = [s for s in self.auto_zone_buffer if (now - s[0]) <= max_buf_sec]
 
-            min_samples = 3 if was_camera_shifted else 4
-            min_time_span = 1.0 if was_camera_shifted else 2.0
-            max_var = 12.0 if was_camera_shifted else 8.0
+            min_samples = 3 if was_camera_shifted else 5
+            min_time_span = 1.0 if was_camera_shifted else 2.5
+            max_var = 12.0 if was_camera_shifted else 6.0
 
             if len(self.auto_zone_buffer) >= min_samples:
                 time_span = self.auto_zone_buffer[-1][0] - self.auto_zone_buffer[0][0]
@@ -942,7 +945,7 @@ class FocusDetector:
                     yaw_variance = max(yaws_in_buf) - min(yaws_in_buf)
                     pitch_variance = max(pitches_in_buf) - min(pitches_in_buf)
 
-                    # Người dùng đã ổn định hướng nhìn / góc cam mới (dao động nhỏ)
+                    # Người dùng đã ngồi ổn định ở góc mới (dao động rất nhỏ)
                     if yaw_variance <= max_var and pitch_variance <= max_var:
                         new_yaw = float(np.median(yaws_in_buf))
                         new_pitch = float(np.median(pitches_in_buf))
@@ -970,7 +973,7 @@ class FocusDetector:
                             print(f"[+] [GOC CAM] {auto_adapt_msg}")
                         except Exception:
                             pass
-        elif not was_camera_shifted and (abs(delta_yaw) < 10.0 and abs(delta_pitch) < 8.0):
+        elif is_inside_zone:
             self.auto_zone_buffer.clear()
 
         # Vùng học tập cá nhân hóa
