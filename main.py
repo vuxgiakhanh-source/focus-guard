@@ -235,9 +235,8 @@ def run_focus_guard():
         last_web_alerting = is_web_alerting
 
         if is_web_alerting:
-            if result.get("status") == "FOCUSED":
-                detector.focused_frames = max(0, detector.focused_frames - 1)
-                result["focus_score"] = detector.get_focus_score()
+            detector._update_energy("DISTRACTED", time.time())
+            result["focus_score"] = detector.get_focus_score()
             result["status"] = "DISTRACTED"
             result["label"] = f"PHÁT HIỆN ĐANG DÙNG {web_distract['label'].upper()}!"
             result["reason"] = f"Đang thao tác trên {web_distract['label']} ({web_distract['duration']:.1f}s)!"
@@ -257,14 +256,29 @@ def run_focus_guard():
             print(f"[+] Hoàn tất học góc học tập! Ngưỡng EAR: {detector.ear_threshold}")
         last_recording_state = is_rec
 
-        # 4. Vẽ hộp đỏ quanh chiếc điện thoại (chỉ khi trong giờ học)
+        # 4. Vẽ hộp nhận diện điện thoại (Đỏ nếu đang CẦM TRÊN TAY, Lam nếu ĐẶT TĨNH TRÊN BÀN)
         if detected_phones and not is_break:
-            for (x1, y1, x2, y2, conf) in detected_phones:
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                top_y = max(0, y1 - 28)
-                cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 180), y1), (0, 0, 255), -1)
-                cv2.putText(frame, f"DIEN THOAI {int(conf*100)}%", (x1 + 6, max(18, y1 - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+            for item in detected_phones:
+                if len(item) == 6:
+                    x1, y1, x2, y2, conf, is_held = item
+                else:
+                    x1, y1, x2, y2, conf = item
+                    is_held = True
+
+                if is_held:
+                    # Điện thoại đang cầm trên tay: Hộp đỏ cảnh báo
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                    top_y = max(0, y1 - 28)
+                    cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 205), y1), (0, 0, 255), -1)
+                    cv2.putText(frame, f"DIEN THOAI TREN TAY {int(conf*100)}%", (x1 + 6, max(18, y1 - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA)
+                else:
+                    # Điện thoại đặt trên bàn / kệ: Hộp vàng lam an toàn, không báo động
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (210, 180, 0), 2)
+                    top_y = max(0, y1 - 24)
+                    cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 195), y1), (180, 130, 20), -1)
+                    cv2.putText(frame, "DIEN THOAI (TREN BAN)", (x1 + 6, max(16, y1 - 7)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
 
         # 5. Xử lý cảnh báo (Giọng nói + Windows Toast)
         if result.get("label") == "WEBCAM BỊ CHE / TỐI ĐEN":
@@ -297,6 +311,9 @@ def run_focus_guard():
                 voice_cd = 7.0 if result["alert_type"] == "AWAY" else 3.5
                 alert_mgr.play_voice(result["alert_type"], cooldown=voice_cd)
         else:
+            # Ngay khi quay lại tập trung: Dừng âm thanh cảnh báo NGAY LẬP TỨC (Zero Audio Delay)!
+            if last_alert_state:
+                alert_mgr.stop()
             last_alert_state = False
 
         # 6. Quản lý thông báo nổi
@@ -350,8 +367,8 @@ def run_focus_guard():
             state_active = pomodoro.toggle()
             print(f"[*] Chế độ Pomodoro: {'BẬT' if state_active else 'TẮT'}")
         elif action == "RESET":
-            detector.total_frames = 0
-            detector.focused_frames = 0
+            detector.reset_focus_score()
+            hud.score_history = [100.0, 100.0]
             start_time = time.time()
             pomodoro.reset()
             print("[*] Đã reset điểm tập trung và đồng hồ Pomodoro.")

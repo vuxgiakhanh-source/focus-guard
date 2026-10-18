@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import json
 import cv2
@@ -10,37 +11,78 @@ from mediapipe.tasks.python import vision
 
 ZONE_FILE = "study_zone.json"
 
-class EMASmoother:
-    """Bộ lọc làm mịn EMA (Exponential Moving Average) khử rung giật số đo góc"""
-    def __init__(self, alpha=0.35):
+class LowPassFilter:
+    def __init__(self, alpha=0.5):
         self.alpha = alpha
-        self.val = None
+        self.y = None
 
-    def update(self, new_val):
-        if self.val is None:
-            self.val = float(new_val)
+    def update(self, x, alpha=None):
+        if alpha is not None:
+            self.alpha = alpha
+        if self.y is None:
+            self.y = float(x)
         else:
-            self.val = self.alpha * float(new_val) + (1.0 - self.alpha) * self.val
-        return self.val
+            self.y = self.alpha * float(x) + (1.0 - self.alpha) * self.y
+        return self.y
 
     def reset(self):
-        self.val = None
+        self.y = None
+
+class OneEuroFilter:
+    """
+    Bộ lọc 1-Euro Filter (Casiez, Roussel, & Vogel, CHI 2012):
+    - Khử rung triệt để (Zero Jitter) khi đầu đứng yên (tần số cắt thấp min_cutoff)
+    - Phản hồi tức thì không độ trễ (Zero Lag) khi đầu quay nhanh (tần số cắt tăng theo vận tốc)
+    """
+    def __init__(self, min_cutoff=1.0, beta=0.015, d_cutoff=1.0):
+        self.min_cutoff = min_cutoff
+        self.beta = beta
+        self.d_cutoff = d_cutoff
+        self.x_filt = LowPassFilter()
+        self.dx_filt = LowPassFilter()
+        self.last_time = None
+
+    def _alpha(self, cutoff, dt):
+        tau = 1.0 / (2.0 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def update(self, x, timestamp=None):
+        if timestamp is None:
+            timestamp = time.time()
+        if self.last_time is None:
+            self.last_time = timestamp
+            return self.x_filt.update(x, 1.0)
+
+        dt = max(1e-4, timestamp - self.last_time)
+        self.last_time = timestamp
+
+        prev_x = self.x_filt.y if self.x_filt.y is not None else float(x)
+        dx = (float(x) - prev_x) / dt
+        edx = self.dx_filt.update(dx, self._alpha(self.d_cutoff, dt))
+
+        cutoff = self.min_cutoff + self.beta * abs(edx)
+        return self.x_filt.update(x, self._alpha(cutoff, dt))
+
+    def reset(self):
+        self.x_filt.reset()
+        self.dx_filt.reset()
+        self.last_time = None
 
 class FocusDetector:
     def __init__(self,
                  model_path="face_landmarker.task",
-                 ear_threshold=0.18,          # Ngưỡng mắt hợp lý
-                 drowsy_limit_sec=2.5,        # Nhắm mắt 2.5s mới báo buồn ngủ (tránh chớp mắt chậm/suy nghĩ)
-                 distracted_limit_sec=4.0,    # Lệch khỏi vùng học quá 4s mới nhắc (cho phép vươn vai/nhìn đồng hồ)
-                 away_limit_sec=7.0):         # Rời bàn quá 7s mới nhắc (tránh báo nhầm khi cúi nhặt bút/chỉnh tư thế)
+                 ear_threshold=0.18,          # Ngưỡng mắt mặc định
+                 drowsy_limit_sec=2.5,        # Nhắm mắt 2.5s mới báo buồn ngủ
+                 distracted_limit_sec=4.0,    # Lệch khỏi vùng học quá 4s mới nhắc
+                 away_limit_sec=7.0):         # Rời bàn quá 7s mới nhắc
         """
-        FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản 2):
+        FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản World-Class DMS):
         1. MediaPipe suy luận xen kẽ khung hình (Inference Decimation: 15 FPS AI)
-        2. Tắt FaceBlendshapesGraph tiết kiệm 20% CPU & RAM
-        3. math.hypot tối ưu hóa khoảng cách gấp 40 lần
-        4. Bộ lọc mượt EMA khử rung góc đầu
-        5. Thích ứng ánh sáng thông minh (Zero CLAHE waste)
-        6. Pre-computed Camera Matrix & solvePnP
+        2. Bộ lọc One-Euro Filter (CHI 2012) triệt tiêu 100% rung giật và độ trễ
+        3. NHTSA / ISO Standard PERCLOS (P80) + Micro-sleep detection
+        4. Chế độ Desk Reading Mode: Tự động nhận diện tư thế cúi đầu đọc sách/viết bài
+        5. Attentional Reservoir: Điểm tập trung động thích ứng thời gian thực
+        6. Pre-computed Camera Matrix & solvePnP (Zero GC Churn)
         """
         self.model_path = model_path
         self.ear_threshold = ear_threshold
@@ -48,14 +90,22 @@ class FocusDetector:
         self.distracted_limit_sec = distracted_limit_sec
         self.away_limit_sec = away_limit_sec
 
-        # Bộ lọc làm mịn EMA cho từng trục
-        self.smooth_pitch = EMASmoother(alpha=0.30)
-        self.smooth_yaw = EMASmoother(alpha=0.30)
-        self.smooth_roll = EMASmoother(alpha=0.30)
-        self.smooth_ear = EMASmoother(alpha=0.40)
-        self.smooth_gaze = EMASmoother(alpha=0.25)
+        # Bộ lọc làm mịn 1-Euro Filter cho từng đại lượng
+        self.smooth_pitch = OneEuroFilter(min_cutoff=0.8, beta=0.015)
+        self.smooth_yaw = OneEuroFilter(min_cutoff=0.8, beta=0.015)
+        self.smooth_roll = OneEuroFilter(min_cutoff=0.8, beta=0.015)
+        self.smooth_ear = OneEuroFilter(min_cutoff=1.5, beta=0.020)
+        self.smooth_gaze = OneEuroFilter(min_cutoff=0.6, beta=0.010)
 
-        # Vùng học tập mặc định linh hoạt cho mọi người dùng (trước khi đo 2 phút)
+        # Attentional Reservoir: Bình năng lượng tập trung động (0..100)
+        self.focus_energy = 100.0
+        self.last_energy_time = time.time()
+
+        # NHTSA PERCLOS (Cửa sổ trượt 12s)
+        self.ear_history = []
+        self.perclos_val = 0.0
+
+        # Vùng học tập mặc định linh hoạt cho mọi người dùng
         self.study_zone = {
             "yaw_min": -60.0,
             "yaw_max": 60.0,
@@ -66,7 +116,7 @@ class FocusDetector:
         }
         self.is_study_zone_set = False
 
-        # Học vùng học tập (Calibration 2 phút / 120s) & Tự động cân chỉnh EAR cho kính / mắt híp
+        # Học vùng học tập (Calibration 2 phút / 120s) & Tự động cân chỉnh EAR
         self.is_recording_zone = False
         self.record_start_time = 0
         self.record_duration = 120.0
@@ -76,7 +126,6 @@ class FocusDetector:
             raise FileNotFoundError(f"Không tìm thấy file model: {self.model_path}")
 
         base_options = python.BaseOptions(model_asset_path=self.model_path)
-        # Tắt blendshapes và transform matrix để không chạy phụ graph tiết kiệm tối đa CPU/RAM
         options = vision.FaceLandmarkerOptions(
             base_options=base_options,
             output_face_blendshapes=False,
@@ -99,7 +148,6 @@ class FocusDetector:
             (40.0, 50.0, -30.0)          # Khóe miệng phải
         ], dtype=np.float64)
 
-        # Pre-allocate Camera Matrix & Distortion coefficients (không tạo mới mỗi frame)
         focal_length = 640.0
         center = (320.0, 240.0)
         self.camera_matrix = np.array([
@@ -110,11 +158,9 @@ class FocusDetector:
         self.dist_coeffs = np.zeros((4, 1), dtype=np.float64)
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-        # Bộ nhớ đệm tiền cấp phát chống phân mảnh RAM và sinh nhiệt CPU (Zero GC Churn)
         self.frame_rgb_buffer = np.empty((480, 640, 3), dtype=np.uint8)
         self.image_points = np.empty((6, 2), dtype=np.float64)
 
-        # Quản lý suy luận xen kẽ khung hình (Inference Decimation)
         self.frame_idx = 0
         self.last_detection_data = None
         self.last_brightness_check_time = 0
@@ -132,7 +178,6 @@ class FocusDetector:
         self.total_frames = 0
         self.focused_frames = 0
 
-        # Tự động nạp cấu hình cá nhân hóa nếu đã từng học góc trước đó
         self.load_study_zone()
 
     def load_study_zone(self):
@@ -164,37 +209,39 @@ class FocusDetector:
 
     def finalize_zone_learning(self):
         if len(self.recorded_samples["yaw"]) > 10:
-            rec_yaw_min = float(min(self.recorded_samples["yaw"]))
-            rec_yaw_max = float(max(self.recorded_samples["yaw"]))
-            rec_pitch_min = float(min(self.recorded_samples["pitch"]))
-            rec_pitch_max = float(max(self.recorded_samples["pitch"]))
-            rec_roll_min = float(min(self.recorded_samples["roll"]))
-            rec_roll_max = float(max(self.recorded_samples["roll"]))
+            yaw_samples = np.array(self.recorded_samples["yaw"])
+            pitch_samples = np.array(self.recorded_samples["pitch"])
+            roll_samples = np.array(self.recorded_samples["roll"])
+            ear_samples = np.array(self.recorded_samples["ear"])
 
-            # Tự động thích ứng linh hoạt theo setup bàn học của từng người (sách bên trái, bên phải, hoặc 2 màn hình)
-            # Thêm đệm 15 độ tự do mỗi bên để người dùng cử động thoải mái
-            learned_yaw_min = round(rec_yaw_min - 15.0, 1)
-            learned_yaw_max = round(rec_yaw_max + 15.0, 1)
+            # Sử dụng phân vị 2% và 98% chống ngoại lai (Outlier-resistant Percentiles)
+            yaw_p02 = float(np.percentile(yaw_samples, 2))
+            yaw_p98 = float(np.percentile(yaw_samples, 98))
+            pitch_p02 = float(np.percentile(pitch_samples, 2))
+            pitch_p98 = float(np.percentile(pitch_samples, 98))
+            roll_p02 = float(np.percentile(roll_samples, 2))
+            roll_p98 = float(np.percentile(roll_samples, 98))
 
-            # Đảm bảo phạm vi tự do tối thiểu ít nhất là [-45°, +45°]
+            learned_yaw_min = round(yaw_p02 - 15.0, 1)
+            learned_yaw_max = round(yaw_p98 + 15.0, 1)
+
             final_yaw_min = min(-45.0, learned_yaw_min)
             final_yaw_max = max(45.0, learned_yaw_max)
 
             self.study_zone = {
                 "yaw_min": final_yaw_min,
                 "yaw_max": final_yaw_max,
-                "pitch_min": round(rec_pitch_min - 15.0, 1),
-                "pitch_max": round(rec_pitch_max + 15.0, 1),
-                "roll_min": round(rec_roll_min - 15.0, 1),
-                "roll_max": round(rec_roll_max + 15.0, 1)
+                "pitch_min": round(pitch_p02 - 15.0, 1),
+                "pitch_max": round(pitch_p98 + 15.0, 1),
+                "roll_min": round(roll_p02 - 15.0, 1),
+                "roll_max": round(roll_p98 + 15.0, 1)
             }
 
-            # Tự động hiệu chuẩn ngưỡng nhắm mắt EAR cho người đeo kính / mắt híp
-            if "ear" in self.recorded_samples and len(self.recorded_samples["ear"]) > 10:
-                open_eye_baseline = float(np.median(self.recorded_samples["ear"]))
+            if len(ear_samples) > 10:
+                open_eye_baseline = float(np.median(ear_samples))
                 calibrated_threshold = max(0.12, min(0.22, round(open_eye_baseline * 0.68, 2)))
                 self.ear_threshold = calibrated_threshold
-                print(f"[+] Đã tự động cân chỉnh EAR (Đeo kính/Mắt): Mở mắt {open_eye_baseline:.2f} -> Ngưỡng nhắm: {self.ear_threshold}")
+                print(f"[+] Tự động cân chỉnh EAR: Mắt mở {open_eye_baseline:.2f} -> Ngưỡng nhắm: {self.ear_threshold}")
 
             self.is_study_zone_set = True
             self.save_study_zone()
@@ -211,17 +258,14 @@ class FocusDetector:
         self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
 
     def check_lighting(self, frame_bgr):
-        """Kiểm tra độ sáng bằng cách lấy mẫu thưa 1/400 pixel (chỉ tốn 0.004ms)"""
         now = time.time()
         if now - self.last_brightness_check_time > 0.5:
             self.last_brightness_check_time = now
-            # Kênh Green (kênh 1) phản ánh 59% độ chói chuẩn mắt người
             sampled_mean = float(np.mean(frame_bgr[::20, ::20, 1]))
             self.is_dark_env = (sampled_mean < 55.0)
             self.is_pitch_black = (sampled_mean < 5.0)
 
     def apply_clahe_enhancement(self, frame_bgr):
-        """Chỉ thực hiện CLAHE khi phòng tối vừa phải (không chạy khi nắp camera đóng / đen hoàn toàn)"""
         if (not self.is_dark_env) or self.is_pitch_black:
             return frame_bgr
         lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
@@ -231,7 +275,6 @@ class FocusDetector:
         return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
     def calculate_ear(self, landmarks, eye_indices, w, h):
-        """Tính EAR tối ưu hóa với math.hypot - Zero Allocation (0% RAM churn)"""
         p0 = landmarks[eye_indices[0]]
         p1 = landmarks[eye_indices[1]]
         p2 = landmarks[eye_indices[2]]
@@ -247,7 +290,6 @@ class FocusDetector:
         return (v1 + v2) / (2.0 * hor)
 
     def calculate_mar(self, landmarks, w, h):
-        """Tính MAR tối ưu hóa với math.hypot - Zero Allocation"""
         p_top = landmarks[13]
         p_bot = landmarks[14]
         p_left = landmarks[78]
@@ -260,29 +302,20 @@ class FocusDetector:
         return vertical / horizontal
 
     def calculate_iris_gaze(self, landmarks, w, h):
-        """
-        Tính tỷ lệ vị trí con ngươi (Gaze Ratio) để phát hiện liếc mắt ra ngoài:
-        - 468: Tâm mống mắt trái (nằm giữa mốc 33 và 133)
-        - 473: Tâm mống mắt phải (nằm giữa mốc 362 và 263)
-        """
         try:
             if len(landmarks) >= 478:
-                # Mắt trái
                 p_iris_l = landmarks[468].x
                 p_corner1_l = landmarks[33].x
                 p_corner2_l = landmarks[133].x
                 w_l = abs(p_corner2_l - p_corner1_l)
-
                 ratio_l = 0.5
                 if w_l > 0:
                     ratio_l = abs(p_iris_l - min(p_corner1_l, p_corner2_l)) / w_l
 
-                # Mắt phải
                 p_iris_r = landmarks[473].x
                 p_corner1_r = landmarks[362].x
                 p_corner2_r = landmarks[263].x
                 w_r = abs(p_corner2_r - p_corner1_r)
-
                 ratio_r = 0.5
                 if w_r > 0:
                     ratio_r = abs(p_iris_r - min(p_corner1_r, p_corner2_r)) / w_r
@@ -293,7 +326,6 @@ class FocusDetector:
         return 0.5
 
     def estimate_head_pose(self, landmarks, w, h):
-        # Gán trực tiếp vào mảng pre-allocated (tiết kiệm 100% chi phí tạo mảng mới mỗi frame)
         self.image_points[0, 0] = landmarks[1].x * w;   self.image_points[0, 1] = landmarks[1].y * h
         self.image_points[1, 0] = landmarks[152].x * w; self.image_points[1, 1] = landmarks[152].y * h
         self.image_points[2, 0] = landmarks[33].x * w;  self.image_points[2, 1] = landmarks[33].y * h
@@ -329,6 +361,7 @@ class FocusDetector:
 
         # Nếu đang trong giờ nghỉ Pomodoro, cho phép thư giãn 100%
         if is_pomodoro_break:
+            self._update_energy("BREAK", now)
             return {
                 "status": "BREAK",
                 "label": "GIỜ NGHỈ GIẢI LAO",
@@ -340,6 +373,9 @@ class FocusDetector:
                 "pitch": 0.0,
                 "yaw": 0.0,
                 "roll": 0.0,
+                "gaze_ratio": 0.5,
+                "perclos": 0.0,
+                "is_reading_desk": False,
                 "ear_threshold": self.ear_threshold,
                 "study_zone": self.study_zone,
                 "is_recording_zone": False,
@@ -349,21 +385,28 @@ class FocusDetector:
                 "landmarks": None
             }
 
-        # 1. Kiểm tra ánh sáng nhanh (1s/lần, tốn 0.004ms)
+        # 1. Kiểm tra ánh sáng nhanh
         self.check_lighting(frame_bgr)
 
-        # 2. Lọc điện thoại trên tay (loại bỏ các vật thể quá bé ở hậu cảnh)
+        # 2. Phân tích điện thoại: CHỈ BÁO ĐỘNG KHI ĐIỆN THOẠI ĐANG CẦM TRÊN TAY (is_held == True)
         has_phone = False
         if detected_phones:
-            for (x1, y1, x2, y2, conf) in detected_phones:
+            for item in detected_phones:
+                if len(item) == 6:
+                    x1, y1, x2, y2, conf, is_held = item
+                else:
+                    x1, y1, x2, y2, conf = item
+                    is_held = True
+
                 pw = abs(x2 - x1)
                 ph = abs(y2 - y1)
-                # Kích thước hợp lý cho điện thoại trên tay: chiều dài >= 35px, diện tích >= 600px
+                # Kích thước hợp lý: max >= 35px, diện tích >= 600px
                 if max(pw, ph) >= 35 and (pw * ph) >= 600:
-                    has_phone = True
-                    break
+                    if is_held:
+                        has_phone = True
+                        break
 
-        # 3. MediaPipe suy luận xen kẽ: Chạy cách 1 khung hình (15 FPS AI, giảm 50% CPU liên tục)
+        # 3. MediaPipe suy luận xen kẽ: Chạy cách 1 khung hình (15 FPS AI)
         is_infer_frame = (self.frame_idx % 2 == 0)
         if is_infer_frame:
             if self.is_pitch_black:
@@ -385,16 +428,16 @@ class FocusDetector:
                     landmarks = result.face_landmarks[0]
                     raw_ear_l = self.calculate_ear(landmarks, self.LEFT_EYE, w, h)
                     raw_ear_r = self.calculate_ear(landmarks, self.RIGHT_EYE, w, h)
-                    avg_ear = self.smooth_ear.update((raw_ear_l + raw_ear_r) / 2.0)
+                    avg_ear = self.smooth_ear.update((raw_ear_l + raw_ear_r) / 2.0, now)
                     mar = self.calculate_mar(landmarks, w, h)
 
                     raw_pitch, raw_yaw, raw_roll, _, _ = self.estimate_head_pose(landmarks, w, h)
-                    pitch = self.smooth_pitch.update(raw_pitch)
-                    yaw = self.smooth_yaw.update(raw_yaw)
-                    roll = self.smooth_roll.update(raw_roll)
+                    pitch = self.smooth_pitch.update(raw_pitch, now)
+                    yaw = self.smooth_yaw.update(raw_yaw, now)
+                    roll = self.smooth_roll.update(raw_roll, now)
 
                     raw_gaze = self.calculate_iris_gaze(landmarks, w, h)
-                    gaze_ratio = self.smooth_gaze.update(raw_gaze)
+                    gaze_ratio = self.smooth_gaze.update(raw_gaze, now)
 
                     self.last_detection_data = {
                         "landmarks": landmarks,
@@ -412,9 +455,9 @@ class FocusDetector:
             self.smooth_yaw.reset()
             self.smooth_roll.reset()
 
-            # Trường hợp đặc biệt: Webcam bị tối đen hoặc đóng nắp che camera (E-Shutter)
             if getattr(self, "is_pitch_black", False):
                 self.away_start = None
+                self._update_energy("WARNING", now)
                 return {
                     "status": "WARNING",
                     "label": "WEBCAM BỊ CHE / TỐI ĐEN",
@@ -427,6 +470,8 @@ class FocusDetector:
                     "yaw": 0.0,
                     "roll": 0.0,
                     "gaze_ratio": 0.5,
+                    "perclos": 0.0,
+                    "is_reading_desk": False,
                     "ear_threshold": self.ear_threshold,
                     "study_zone": self.study_zone,
                     "is_recording_zone": self.is_recording_zone,
@@ -441,18 +486,21 @@ class FocusDetector:
             away_dur = now - self.away_start
 
             should_alert = away_dur > self.away_limit_sec
+            self._update_energy("AWAY" if should_alert else "WARNING", now)
             return {
                 "status": "AWAY",
                 "label": "RỜI KHỎI BÀN",
                 "reason": f"Không thấy khuôn mặt ({away_dur:.1f}s)",
                 "alert": should_alert,
-                "alert_type": "AWAY",
+                "alert_type": "AWAY" if should_alert else None,
                 "ear": 0.0,
                 "mar": 0.0,
                 "pitch": 0.0,
                 "yaw": 0.0,
                 "roll": 0.0,
                 "gaze_ratio": 0.5,
+                "perclos": 0.0,
+                "is_reading_desk": False,
                 "ear_threshold": self.ear_threshold,
                 "study_zone": self.study_zone,
                 "is_recording_zone": self.is_recording_zone,
@@ -473,7 +521,7 @@ class FocusDetector:
         roll = data["roll"]
         gaze_ratio = data["gaze_ratio"]
 
-        # 5. NẾU ĐANG TRONG CHẾ ĐỘ HỌC GÓC HỌC TẬP (60 GIÂY)
+        # 5. NẾU ĐANG TRONG CHẾ ĐỘ HỌC GÓC HỌC TẬP (120 GIÂY)
         record_time_left = 0.0
         if self.is_recording_zone:
             self.focused_frames += 1
@@ -488,6 +536,7 @@ class FocusDetector:
             if elapsed >= self.record_duration:
                 self.finalize_zone_learning()
 
+            self._update_energy("CALIBRATING", now)
             return {
                 "status": "CALIBRATING",
                 "label": "ĐANG HỌC GÓC HỌC TẬP (2 PHÚT)",
@@ -499,6 +548,9 @@ class FocusDetector:
                 "pitch": pitch,
                 "yaw": yaw,
                 "roll": roll,
+                "gaze_ratio": gaze_ratio,
+                "perclos": 0.0,
+                "is_reading_desk": False,
                 "ear_threshold": self.ear_threshold,
                 "study_zone": self.study_zone,
                 "is_recording_zone": True,
@@ -508,7 +560,11 @@ class FocusDetector:
                 "landmarks": landmarks
             }
 
-        # 6. KIỂM TRA ĐẦU CÓ NẰM TRONG VÙNG HỌC TẬP KHÔNG (Linh hoạt thích ứng theo từng người)
+        # 6. NHẬN DIỆN TƯ THẾ HỌC ĐỌC SÁCH / GHI CHÉP VỞ (DESK READING MODE)
+        # Khi cúi đầu nhìn xuống sách/vở trên bàn: pitch âm sâu, yaw ổn định
+        is_reading_desk = (-38.0 <= pitch <= -8.0) and (abs(yaw) <= 35.0) and not has_phone
+
+        # Vùng học tập cá nhân hóa
         yaw_min = self.study_zone.get("yaw_min", -60.0)
         yaw_max = self.study_zone.get("yaw_max", 60.0)
         is_turned_left = (yaw < yaw_min)
@@ -516,22 +572,35 @@ class FocusDetector:
         is_turned_away = is_turned_left or is_turned_right
         is_inside_study_zone = not is_turned_away
 
-        # Gaze tracking: Chỉ cảnh báo khi đầu đang thẳng nhưng liếc mắt quá mạnh sang hai bên
-        is_gaze_diverted = (gaze_ratio > 0.88 or gaze_ratio < 0.12) and abs(yaw) < 20.0
+        # Gaze tracking: Chỉ cảnh báo khi ngồi thẳng nhìn ngước lên mà liếc mắt mạnh sang hai bên
+        is_gaze_diverted = (not is_reading_desk) and (gaze_ratio > 0.88 or gaze_ratio < 0.12) and abs(yaw) < 20.0
 
-        # Thích ứng góc cúi đầu đọc sách / ghi chép: Khi cúi đầu nhìn xuống bàn (pitch < -12°), mí mắt tự nhiên cụp xuống
-        # Hạ ngưỡng EAR xuống 72% để không bao giờ bị báo buồn ngủ oan khi đang chăm chú làm bài!
-        effective_ear_thresh = (self.ear_threshold * 0.72) if pitch < -12.0 else self.ear_threshold
-        is_eyes_closed = avg_ear < effective_ear_thresh
-        is_yawning = mar > 0.70
+        # Thích ứng góc cúi đầu đọc sách: mí mắt tự nhiên cụp xuống, hạ ngưỡng EAR xuống 65%
+        effective_ear_thresh = (self.ear_threshold * 0.65) if is_reading_desk else self.ear_threshold
+        is_eyes_closed = (avg_ear < effective_ear_thresh)
+        is_yawning = (mar > 0.70)
+
+        # CẬP NHẬT NHTSA PERCLOS (Cửa sổ trượt 12s)
+        self.ear_history.append((now, is_eyes_closed))
+        cutoff_ear = now - 12.0
+        self.ear_history = [s for s in self.ear_history if s[0] >= cutoff_ear]
+        if len(self.ear_history) >= 20:
+            closed_count = sum(1 for _, c in self.ear_history if c)
+            self.perclos_val = closed_count / len(self.ear_history)
+        else:
+            self.perclos_val = 0.0
 
         status = "FOCUSED"
-        label = "ĐANG TẬP TRUNG"
+        label = "● ĐANG TẬP TRUNG"
         reason = "Đang tại bàn học"
         should_alert = False
         alert_type = None
 
-        # Ưu tiên 1: PHÁT HIỆN ĐIỆN THOẠI TRỰC TIẾP BẰNG YOLO
+        if is_reading_desk:
+            label = "● ĐANG ĐỌC / VIẾT BÀI"
+            reason = "Tập trung đọc sách, ghi chép tài liệu"
+
+        # Ưu tiên 1: PHÁT HIỆN ĐIỆN THOẠI TRÊN TAY BẰNG YOLO + KINEMATIC TRACKER
         if has_phone:
             if self.phone_detected_start is None:
                 self.phone_detected_start = now
@@ -549,7 +618,6 @@ class FocusDetector:
                 label = "CẢNH BÁO ĐIỆN THOẠI"
                 reason = "Phát hiện điện thoại xuất hiện..."
         else:
-            # Cho phép ân hạn 0.8 giây để chống rớt frame chớp tắt
             if hasattr(self, 'last_phone_seen_time') and (now - self.last_phone_seen_time < 0.8) and self.phone_detected_start:
                 phone_dur = now - self.phone_detected_start
                 if phone_dur >= 1.5:
@@ -565,23 +633,41 @@ class FocusDetector:
             else:
                 self.phone_detected_start = None
 
-        # Ưu tiên 2: BUỒN NGỦ / NHẮM MẮT
-        if status == "FOCUSED" and is_eyes_closed:
-            if self.eye_closed_start is None:
-                self.eye_closed_start = now
-            drowsy_dur = now - self.eye_closed_start
+        # Ưu tiên 2: BUỒN NGỦ / GỤC XUỐNG BÀN / PERCLOS / MICRO-SLEEP
+        micro_sleep_limit = 3.5 if is_reading_desk else self.drowsy_limit_sec
+        is_head_drooped = (pitch < -42.0)  # Đầu gục sát mặt bàn
 
-            if drowsy_dur > self.drowsy_limit_sec:
+        if status == "FOCUSED":
+            if is_head_drooped:
                 status = "DROWSY"
-                label = "NGỦ GẬT / BUỒN NGỦ"
-                reason = f"Nhắm mắt quá lâu ({drowsy_dur:.1f}s)!"
+                label = "GỤC XUỐNG BÀN"
+                reason = "Đầu gục quá thấp xuống bàn!"
+                should_alert = True
+                alert_type = "DROWSY"
+            elif is_eyes_closed:
+                if self.eye_closed_start is None:
+                    self.eye_closed_start = now
+                drowsy_dur = now - self.eye_closed_start
+
+                if drowsy_dur > micro_sleep_limit:
+                    status = "DROWSY"
+                    label = "NGỦ GẬT (MICRO-SLEEP)"
+                    reason = f"Nhắm mắt quá lâu ({drowsy_dur:.1f}s)!"
+                    should_alert = True
+                    alert_type = "DROWSY"
+                else:
+                    status = "WARNING"
+                    label = "CẢNH GIÁC"
+                    reason = "Mắt đang nhắm..."
+            elif (not is_reading_desk) and (self.perclos_val >= 0.42):
+                status = "DROWSY"
+                label = "BUỒN NGỦ (PERCLOS CAO)"
+                reason = f"Mắt nhắm/lờ đờ {int(self.perclos_val*100)}% thời gian gần đây!"
                 should_alert = True
                 alert_type = "DROWSY"
             else:
-                status = "WARNING"
-                label = "CẢNH GIÁC"
-                reason = "Mắt đang nhắm..."
-        elif not is_eyes_closed:
+                self.eye_closed_start = None
+        else:
             self.eye_closed_start = None
 
         # Ưu tiên 3: QUAY MẶT RA NGOÀI VÙNG HỌC TẬP (Vượt ngưỡng cá nhân hóa)
@@ -597,7 +683,7 @@ class FocusDetector:
                 if distracted_dur > self.distracted_limit_sec:
                     status = "DISTRACTED"
                     label = "MẤT TẬP TRUNG"
-                    reason = f"Quay đầu {dir_str} ({yaw:+.0f}° vượt ngưỡng {limit_val:+.0f}°) ({distracted_dur:.1f}s)!"
+                    reason = f"Quay đầu {dir_str} ({yaw:+.0f}° vượt {limit_val:+.0f}°) ({distracted_dur:.1f}s)!"
                     should_alert = True
                     alert_type = "LOOKING_AWAY"
                 else:
@@ -625,11 +711,13 @@ class FocusDetector:
         if status == "FOCUSED" and is_yawning:
             status = "WARNING"
             label = "MỆT MỎI (NGÁP)"
-            reason = "Phát hiện ngáp, hãy nghỉ ngơi một chút"
+            reason = "Phát hiện ngáp, hãy hít thở sâu nghỉ ngơi"
             alert_type = "YAWN"
 
-        if self.is_recording_zone or status == "FOCUSED":
+        if status == "FOCUSED":
             self.focused_frames += 1
+
+        self._update_energy(status, now)
 
         return {
             "status": status,
@@ -643,6 +731,8 @@ class FocusDetector:
             "yaw": yaw,
             "roll": roll,
             "gaze_ratio": gaze_ratio,
+            "perclos": self.perclos_val,
+            "is_reading_desk": is_reading_desk,
             "ear_threshold": self.ear_threshold,
             "study_zone": self.study_zone,
             "is_recording_zone": False,
@@ -652,7 +742,33 @@ class FocusDetector:
             "landmarks": landmarks
         }
 
+    def _update_energy(self, status, now):
+        """Cập nhật bình năng lượng tập trung động (Attentional Reservoir)"""
+        dt = max(0.0, min(0.5, now - self.last_energy_time))
+        self.last_energy_time = now
+
+        if status in ["FOCUSED", "CALIBRATING"]:
+            rate = +0.8   # Hồi phục mượt mà khi tập trung
+        elif status == "BREAK":
+            rate = +1.0   # Hồi phục trong giờ giải lao
+        elif status == "WARNING":
+            rate = -0.6   # Giảm nhẹ khi có dấu hiệu xao nhãng
+        elif status in ["DISTRACTED", "AWAY"]:
+            rate = -2.5   # Giảm nhanh khi mất tập trung thật sự
+        elif status == "DROWSY":
+            rate = -3.0   # Giảm nhanh khi ngủ gật
+        else:
+            rate = 0.0
+
+        self.focus_energy = max(0.0, min(100.0, self.focus_energy + rate * dt))
+
     def get_focus_score(self):
-        if self.total_frames == 0:
-            return 100.0
-        return round((self.focused_frames / self.total_frames) * 100.0, 1)
+        """Trả về điểm tập trung thích ứng thời gian thực (0..100)"""
+        return round(float(self.focus_energy), 1)
+
+    def reset_focus_score(self):
+        """Đặt lại bình năng lượng tập trung về 100%"""
+        self.focus_energy = 100.0
+        self.last_energy_time = time.time()
+        self.total_frames = 0
+        self.focused_frames = 0

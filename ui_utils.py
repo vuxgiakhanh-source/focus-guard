@@ -191,7 +191,7 @@ class HUDRenderer:
             else:
                 lbl = result.get("label", "ĐANG TẬP TRUNG")
                 rsn = result.get("reason", "Đang tại bàn học")
-                status_title = f"● {lbl}"
+                status_title = f"{lbl}" if lbl.startswith("●") else f"● {lbl}"
                 sub_detail = rsn
 
             # Vẽ Badge trạng thái
@@ -255,6 +255,8 @@ class HUDRenderer:
 
             yaw_val = result.get("yaw", 0.0)
             ear_val = result.get("ear", 0.25)
+            perclos_val = result.get("perclos", 0.0)
+            is_reading = result.get("is_reading_desk", False)
             yaw_min_val = zone.get("yaw_min", -60.0)
             yaw_max_val = zone.get("yaw_max", 60.0)
 
@@ -266,12 +268,15 @@ class HUDRenderer:
                 limit_str = f"[{yaw_min_val:+.0f}°, {yaw_max_val:+.0f}°]"
 
             face_dot = "●" if result.get("status") != "AWAY" else "○"
-            face_state = "Tại bàn" if result.get("status") != "AWAY" else "Rời bàn"
+            if is_reading:
+                face_state = "Đọc/Viết bài"
+            else:
+                face_state = "Tại bàn" if result.get("status") != "AWAY" else "Rời bàn"
 
             pose_pil = Image.fromarray(cv2.cvtColor(pose_roi, cv2.COLOR_BGR2RGB))
             d_p = ImageDraw.Draw(pose_pil)
             d_p.text((8, 6), f"{face_dot} {face_state}  |  Góc quay: {yaw_val:+.0f}°", font=self.get_font(11), fill=(210, 230, 255))
-            d_p.text((8, 24), f"Mắt: {ear_val:.2f} (Ngưỡng: {ear_thresh:.2f})", font=self.get_font(11), fill=(185, 205, 225))
+            d_p.text((8, 24), f"Mắt: {ear_val:.2f} (Ngưỡng: {ear_thresh:.2f})  |  P80: {int(perclos_val*100)}%", font=self.get_font(11), fill=(185, 205, 225))
             d_p.text((8, 40), f"Vùng cá nhân: {limit_str}", font=self.get_font(10), fill=(140, 160, 185))
 
             pose_roi[:] = cv2.cvtColor(np.array(pose_pil), cv2.COLOR_RGB2BGR)
