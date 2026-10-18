@@ -207,7 +207,7 @@ def run_focus_guard():
         return
 
     # Chỉ nạp YOLO sau khi mở được camera để tránh dùng CPU vô ích khi không có camera.
-    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.40)
+    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.35, inference_interval_sec=0.50)
 
     # Cài đặt độ phân giải chuẩn 640x480 và triệt tiêu độ trễ bộ đệm (Zero Buffer Delay)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -228,7 +228,7 @@ def run_focus_guard():
     cv2.setMouseCallback(WIN_TITLE, on_mouse_event)
 
     print("[+] Camera đã sẵn sàng!")
-    print("    - [Click / C] : XÁC ĐỊNH KHUNG HỌC (10s thu thập góc quay bàn học & mắt, bấm C chốt sớm).")
+    print("    - [Click / C] : XÁC ĐỊNH KHUNG HỌC (60s thu thập góc học & mắt; bấm C để chốt sớm).")
     print("    - [Click / P] : BẬT / TẮT đồng hồ Pomodoro (25p học / 5p nghỉ / 15p nghỉ dài sau 4 hiệp).")
     print("    - [Click / H] : BẬT / TẮT bảng THỐNG KÊ & CHUỖI HỌC TẬP (Daily Streak).")
     print("    - [Click / M] : BẬT / TẮT âm thanh cảnh báo.")
@@ -481,7 +481,7 @@ def run_focus_guard():
                 if detector.is_recording_zone:
                     msg = detector.finalize_zone_learning()
                 else:
-                    msg = detector.start_zone_learning(duration=10.0)
+                    msg = detector.start_zone_learning(duration=60.0)
                 alert_msg = msg
                 alert_msg_time = time.time()
             elif action == "POMODORO":

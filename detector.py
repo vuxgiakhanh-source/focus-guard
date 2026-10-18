@@ -125,7 +125,7 @@ class FocusDetector:
         self.is_study_zone_set = True
         self.is_recording_zone = False
         self.record_start_time = 0.0
-        self.record_duration = 10.0
+        self.record_duration = 60.0
         self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
         self.last_recorded_face_timestamp = 0.0
         self.last_calib_msg = ""
@@ -420,9 +420,9 @@ class FocusDetector:
         print(f"[+] Đã đặt tâm góc học ({cur_yaw:+.0f}°) & cân chỉnh EAR ({self.ear_threshold:.2f}) tức thì!")
         return f"ĐÃ LƯU TÂM CHUẨN GÓC HỌC ({cur_yaw:+.0f}°) & MẮT ({self.ear_threshold:.2f}) XONG! ✓"
 
-    def start_zone_learning(self, duration=10.0):
+    def start_zone_learning(self, duration=60.0):
         """
-        Bắt đầu phiên xác định khung học tương tác thông minh (10 giây):
+        Bắt đầu phiên xác định khung học tương tác thông minh (mặc định 60 giây):
         Thu thập các góc quay yaw (trái/phải mép bàn), pitch (nhìn thẳng & cúi viết bài),
         và độ mở mắt thực tế để xây dựng vùng an toàn cá nhân hóa chính xác.
         """
@@ -438,9 +438,17 @@ class FocusDetector:
             pass
         return f"🎯 BẮT ĐẦU XÁC ĐỊNH KHUNG HỌC ({duration:.0f}s): Nhìn thẳng, quay mép bàn & cúi viết bài!"
 
+    def _zone_learning_guide(self, time_left):
+        phase_duration = self.record_duration / 3.0
+        if time_left > phase_duration * 2.0:
+            return "1️⃣ Nhìn thẳng tự nhiên vào màn hình"
+        if time_left > phase_duration:
+            return "2️⃣ Quay nhẹ sang trái rồi phải, giữ mỗi bên vài giây"
+        return "3️⃣ Cúi nhìn vở, viết bài như tư thế học bình thường"
+
     def finalize_zone_learning(self):
         """
-        Chốt dữ liệu và tính toán khung học tập cá nhân hóa từ các mẫu đã thu thập trong 10s.
+        Chốt dữ liệu và tính toán khung học tập cá nhân hóa từ các mẫu đã thu thập trong phiên.
         Có thể hoàn tất tự động khi hết giờ hoặc hoàn tất sớm khi bấm [C].
         """
         self.is_recording_zone = False
@@ -491,7 +499,7 @@ class FocusDetector:
                 pass
             return msg
         else:
-            # Nếu chưa đủ mẫu (ví dụ mặt khuất toàn bộ 10s), gọi quick_calibrate dự phòng
+            # Nếu chưa đủ mẫu, dùng quick_calibrate dự phòng khi vẫn còn dữ liệu mặt mới
             if self.last_detection_data is not None:
                 msg = self.quick_calibrate()
                 self.last_calib_msg = msg
@@ -674,8 +682,8 @@ class FocusDetector:
 
                 pw = abs(x2 - x1)
                 ph = abs(y2 - y1)
-                # Kích thước hợp lý: max >= 38px, diện tích >= 1000px
-                if max(pw, ph) >= 38 and (pw * ph) >= 1000:
+                # Kích thước hợp lý: max >= 32px, diện tích >= 700px
+                if max(pw, ph) >= 32 and (pw * ph) >= 700:
                     if is_held:
                         has_phone = True
                         break
@@ -725,11 +733,12 @@ class FocusDetector:
                     self.finalize_zone_learning()
                     record_time_left = 0.0
 
+                guide_txt = self._zone_learning_guide(record_time_left)
                 self._update_energy("CALIBRATING", now)
                 return {
                     "status": "CALIBRATING",
                     "label": "● ĐANG XÁC ĐỊNH KHUNG HỌC",
-                    "reason": "3️⃣ Cúi đầu nhìn vở như lúc viết bài",
+                    "reason": guide_txt,
                     "alert": False,
                     "alert_type": None,
                     "ear": 0.22,
@@ -744,6 +753,7 @@ class FocusDetector:
                     "study_zone": self.study_zone,
                     "is_recording_zone": self.is_recording_zone,
                     "record_time_left": record_time_left,
+                    "record_duration": self.record_duration,
                     "is_study_zone_set": self.is_study_zone_set,
                     "focus_score": self.get_focus_score(),
                     "calib_result_msg": self.last_calib_msg if not self.is_recording_zone else None,
@@ -862,12 +872,7 @@ class FocusDetector:
                 self.finalize_zone_learning()
                 record_time_left = 0.0
 
-            if record_time_left > 6.5:
-                guide_txt = "1️⃣ Nhìn thẳng tự nhiên vào màn hình"
-            elif record_time_left > 3.0:
-                guide_txt = "2️⃣ Quay nhẹ sang 2 bên mép bàn học"
-            else:
-                guide_txt = "3️⃣ Cúi đầu nhìn vở như lúc viết bài"
+            guide_txt = self._zone_learning_guide(record_time_left)
 
             self._update_energy("CALIBRATING", now)
             return {
@@ -888,6 +893,7 @@ class FocusDetector:
                 "study_zone": self.study_zone,
                 "is_recording_zone": self.is_recording_zone,
                 "record_time_left": record_time_left,
+                "record_duration": self.record_duration,
                 "is_study_zone_set": self.is_study_zone_set,
                 "focus_score": self.get_focus_score(),
                 "calib_result_msg": self.last_calib_msg if not self.is_recording_zone else None,

@@ -307,7 +307,8 @@ class HUDRenderer:
             cv2.rectangle(frame, (cal_x1, cal_y1), (cal_x2, cal_y2), (0, 210, 255), 1)
 
             cal_time_left = result.get("record_time_left", 0.0)
-            cal_progress = max(0.0, min(1.0, (10.0 - cal_time_left) / 10.0))
+            cal_duration = max(1.0, float(result.get("record_duration", 60.0)))
+            cal_progress = max(0.0, min(1.0, (cal_duration - cal_time_left) / cal_duration))
 
             cal_pil = Image.fromarray(cv2.cvtColor(cal_roi, cv2.COLOR_BGR2RGB))
             d_cal = ImageDraw.Draw(cal_pil)

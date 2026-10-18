@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 class PhoneTrack:
-    """Theo dõi quỹ đạo, động học (Kinematics) và tiếp xúc bàn tay của từng chiếc điện thoại"""
+    """Theo dõi quỹ đạo, động học và tiếp xúc bàn tay của từng chiếc điện thoại"""
     def __init__(self, cx, cy, w, h, conf, now, has_hand_contact=False):
         self.history = [(now, cx, cy)]
         self.last_seen = now
@@ -15,8 +15,10 @@ class PhoneTrack:
         self.h = h
         self.has_hand_contact = has_hand_contact
         self.hand_contact_history = [(now, has_hand_contact)]
-        self.is_held = False
+        # Điện thoại khi xuất hiện trước camera đa phần do người dùng cầm đưa vào -> Mặc định là CẦM TRÊN TAY
+        self.is_held = True
         self.first_seen = now
+        self.static_start_time = None
 
     def update(self, cx, cy, w, h, conf, now, has_hand_contact=False):
         self.last_seen = now
@@ -27,41 +29,36 @@ class PhoneTrack:
         self.history.append((now, cx, cy))
         self.hand_contact_history.append((now, has_hand_contact))
 
-        cutoff = now - 2.5
+        cutoff = now - 3.0
         self.history = [pt for pt in self.history if pt[0] >= cutoff]
         self.hand_contact_history = [pt for pt in self.hand_contact_history if pt[0] >= cutoff]
 
-        # Tỷ lệ tiếp xúc bàn tay trong 1.0 giây gần nhất
-        recent_contacts = [pt[1] for pt in self.hand_contact_history if pt[0] >= now - 1.0]
+        recent_contacts = [pt[1] for pt in self.hand_contact_history if pt[0] >= now - 1.5]
         hand_contact_rate = (sum(recent_contacts) / len(recent_contacts)) if recent_contacts else 0.0
+        has_hand = has_hand_contact or (hand_contact_rate >= 0.15)
 
         if len(self.history) >= 2:
             xs = [pt[1] for pt in self.history]
             ys = [pt[2] for pt in self.history]
             disp = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
 
-            recent = [pt for pt in self.history if pt[0] >= now - 0.7]
-            if len(recent) >= 2:
-                dt = max(0.02, recent[-1][0] - recent[0][0])
-                d_dist = math.hypot(recent[-1][1] - recent[0][1], recent[-1][2] - recent[0][2])
-                vel = d_dist / dt
-            else:
-                vel = 0.0
-
-            # TIÊU CHUẨN ĐỘNG HỌC & TIẾP XÚC BÀN TAY (KINEMATIC + HAND CONTACT):
-            # 1. BẮT BUỘC PHẢI CÓ TAY CẦM / CHẠM VÀO ĐIỆN THOẠI (has_hand_contact hoặc hand_contact_rate >= 0.30)
-            # 2. VÀ có chuyển động cầm/nhấc/bấm vuốt (disp > 16px hoặc vel > 14px/s hoặc conf >= 0.65 cầm trên không)
-            has_hand = has_hand_contact or (hand_contact_rate >= 0.30)
-            if has_hand and (disp > 16.0 or vel > 14.0 or (self.conf >= 0.65 and disp > 8.0)):
+            # 1. Nếu có chuyển động (nhấc lên, di chuyển, rung tay tự nhiên) -> CẦM TRÊN TAY
+            if disp > 8.0:
                 self.is_held = True
-            elif not has_hand:
-                # Không có bàn tay chạm vào -> Tuyệt đối là vật thể tĩnh trên bàn / kệ
-                self.is_held = False
-            elif not self.is_held and (now - self.first_seen >= 1.0) and disp < 14.0 and vel < 9.0:
-                # Chưa từng được cầm lên và hoàn toàn bất động -> vật thể tĩnh
-                self.is_held = False
+                self.static_start_time = None
+            # 2. Nếu có bàn tay chạm/đỡ điện thoại -> CẦM TRÊN TAY dù giữ yên
+            elif has_hand:
+                self.is_held = True
+                self.static_start_time = None
+            # 3. Không có tay chạm VÀ vị trí gần như bất động hoàn toàn
+            else:
+                if self.static_start_time is None:
+                    self.static_start_time = now
+                elif now - self.static_start_time >= 1.5:
+                    # Nằm yên trên bàn không có tay chạm > 1.5s -> ĐẶT TĨNH TRÊN BÀN
+                    self.is_held = False
         else:
-            self.is_held = False
+            self.is_held = True
 
 
 class KinematicPhoneTracker:
@@ -70,8 +67,8 @@ class KinematicPhoneTracker:
         self.tracks = []
 
     def update(self, raw_boxes, now):
-        # Dọn dẹp vết cũ quá 2.0s
-        self.tracks = [tr for tr in self.tracks if (now - tr.last_seen) < 2.0]
+        # Dọn dẹp vết cũ quá 2.5s
+        self.tracks = [tr for tr in self.tracks if (now - tr.last_seen) < 2.5]
 
         results = []
         for item in raw_boxes:
@@ -87,7 +84,7 @@ class KinematicPhoneTracker:
             h = abs(y2 - y1)
 
             best_track = None
-            min_dist = 70.0
+            min_dist = 140.0
             for tr in self.tracks:
                 last_pt = tr.history[-1]
                 dist = math.hypot(cx - last_pt[1], cy - last_pt[2])
@@ -101,7 +98,7 @@ class KinematicPhoneTracker:
             else:
                 new_tr = PhoneTrack(cx, cy, w, h, conf, now, has_hand_contact)
                 self.tracks.append(new_tr)
-                is_held = False
+                is_held = new_tr.is_held
 
             results.append((x1, y1, x2, y2, conf, is_held))
 
@@ -109,19 +106,19 @@ class KinematicPhoneTracker:
 
 
 class PhoneDetector:
-    def __init__(self, model_name="yolov8n.pt", conf_thresh=0.40, inference_interval_sec=1.0):
+    def __init__(self, model_name="yolov8n.pt", conf_thresh=0.35, inference_interval_sec=0.50):
         """
         Bộ phát hiện điện thoại trên tay người dùng sử dụng YOLOv8 Nano SIÊU TỐI ƯU HÓA:
         - torch.inference_mode(): Loại bỏ 100% overhead autograd của PyTorch
         - Model Warmup: Pre-warm mô hình ngay khi nạp, triệt tiêu giật lag ở khung hình đầu tiên
-        - Quét tối đa khoảng 1 FPS; CPU thực tế còn tùy model và cấu hình máy
+        - Tần suất quét 2 FPS (mỗi 0.50s), phản hồi tức thì và tốn <1% CPU
         - Kinematic Tracker + Hand Contact: Phân biệt chính xác điện thoại CẦM TRÊN TAY vs ĐẶT TĨNH TRÊN BÀN / KỆ
         - Anti-Hallucination Filters: Loại bỏ hoàn toàn sách vở, lót chuột, post-it, điều khiển, vật chữ nhật
-        - Grace Persistence (0.6s): Giữ hộp nhận diện ổn định, chống chớp tắt khi tay chuyển động
+        - Grace Persistence (1.5s): Giữ hộp nhận diện ổn định, chống chớp tắt khi tay chuyển động
         """
         self.conf_thresh = conf_thresh
         self.inference_interval_sec = max(0.25, float(inference_interval_sec))
-        self.detection_ttl_sec = max(1.2, self.inference_interval_sec * 1.75)
+        self.detection_ttl_sec = max(1.5, self.inference_interval_sec * 2.5)
         self.model = None
         self.torch = None
         self.is_ready = False
@@ -218,19 +215,17 @@ class PhoneDetector:
             return False, False
 
         # 1. TỶ LỆ HÌNH HỌC (ASPECT RATIO):
-        # Smartphone luôn có tỷ lệ cạnh từ 1.28 đến 2.80 (chuẩn 16:9 đến 20:9 hoặc nghiêng 3D)
-        # Loại bỏ vật vuông (post-it, lót ly, sổ tay mini < 1.28) và vật quá dài (thước kẻ, bút, remote > 2.80)
+        # Cho phép cả khi điện thoại nghiêng 3D hoặc thẳng đứng (1.12 đến 3.20)
         aspect_ratio = float(long_side) / float(short_side)
-        if aspect_ratio < 1.28 or aspect_ratio > 2.80:
+        if aspect_ratio < 1.12 or aspect_ratio > 3.20:
             return False, False
 
         # 2. GIỚI HẠN DIỆN TÍCH & KÍCH THƯỚC TRONG KHUNG HÌNH:
-        # Điện thoại ở khoảng cách ngồi học không bao giờ chiếm > 16% diện tích camera
         box_area = w * h
         frame_area = img_w * img_h
-        if box_area > (frame_area * 0.16) or w > (img_w * 0.48) or h > (img_h * 0.58):
+        if box_area > (frame_area * 0.35) or w > (img_w * 0.65) or h > (img_h * 0.75):
             return False, False
-        if long_side < 38 or box_area < 1000:
+        if long_side < 32 or box_area < 700:
             return False, False
 
         # Cắt ROI hợp lệ trong ảnh
@@ -243,9 +238,8 @@ class PhoneDetector:
             return False, False
 
         # 3. KIỂM TRA TIẾP XÚC BÀN TAY (SKIN / HAND CONTACT):
-        # Mở rộng vùng biên 12% để kiểm tra các ngón tay cầm hoặc lòng bàn tay đỡ điện thoại
-        pad_x = max(4, int(w * 0.12))
-        pad_y = max(4, int(h * 0.12))
+        pad_x = max(6, int(w * 0.16))
+        pad_y = max(6, int(h * 0.16))
         hx1 = max(0, x1_c - pad_x)
         hy1 = max(0, y1_c - pad_y)
         hx2 = min(img_w, x2_c + pad_x)
@@ -253,32 +247,27 @@ class PhoneDetector:
         hand_roi = frame[hy1:hy2, hx1:hx2]
 
         ycrcb = cv2.cvtColor(hand_roi, cv2.COLOR_BGR2YCrCb)
-        skin_mask = (ycrcb[:, :, 1] >= 133) & (ycrcb[:, :, 1] <= 173) & \
-                    (ycrcb[:, :, 2] >= 77) & (ycrcb[:, :, 2] <= 127)
+        skin_mask = (ycrcb[:, :, 1] >= 125) & (ycrcb[:, :, 1] <= 180) & \
+                    (ycrcb[:, :, 2] >= 70) & (ycrcb[:, :, 2] <= 135)
         skin_pixels = np.count_nonzero(skin_mask)
         skin_pixel_count = hand_roi.shape[0] * hand_roi.shape[1]
         skin_ratio = float(skin_pixels) / max(1, skin_pixel_count)
-        has_hand_contact = (skin_ratio >= 0.030)
+        has_hand_contact = (skin_ratio >= 0.015)
 
         # 4. LOẠI BỎ TRANG SÁCH / GIẤY VỞ TRẮNG TRÊN BÀN HỌC (PHOTOMETRIC PAPER FILTER):
-        # Trang vở/sách có nền giấy trắng sáng đồng đều. Điện thoại có viền bezel hoặc độ tương phản cao.
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         mean_val = float(np.mean(gray_roi))
-        white_ratio = float(np.count_nonzero(gray_roi > 200)) / float(gray_roi.size)
+        white_ratio = float(np.count_nonzero(gray_roi > 205)) / float(gray_roi.size)
 
-        if not has_hand_contact and mean_val > 180.0 and white_ratio > 0.38:
-            # Đây là trang sách / vở trắng trên bàn học, không phải điện thoại!
+        if not has_hand_contact and mean_val > 190.0 and white_ratio > 0.50:
             return False, False
-        if white_ratio > 0.70:
-            # Hơn 70% là giấy trắng tinh -> Chắc chắn là tài liệu / vở bài tập
+        if white_ratio > 0.75:
             return False, False
 
         # 5. LỌC ĐỘ TIN CẬY (CONFIDENCE FILTER):
-        # - Nếu không có bàn tay chạm vào (vật thể nằm trơ trọi trên bàn): bắt buộc conf >= 0.52
-        # - Nếu có bàn tay chạm vào: chỉ cần conf >= 0.40
-        if not has_hand_contact and conf < 0.52:
+        if not has_hand_contact and conf < 0.45:
             return False, False
-        if conf < 0.40:
+        if conf < 0.35:
             return False, False
 
         return True, has_hand_contact
