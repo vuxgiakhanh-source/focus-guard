@@ -291,7 +291,7 @@ class HUDRenderer:
             progress = max(0.0, min(1.0, (120.0 - time_left) / 120.0))
 
             box_w = 560
-            box_h = 114
+            box_h = 128
             cx1 = w // 2 - box_w // 2
             cy1 = h // 2 - box_h // 2
             cx2 = cx1 + box_w
@@ -310,12 +310,14 @@ class HUDRenderer:
             d_rec.rounded_rectangle([bar_x1, bar_y, bar_x1 + int(bar_w * progress), bar_y + 8], radius=4, fill=(0, 255, 200))
 
             title = f"🎯 AI ĐANG HỌC GÓC HỌC TẬP & ĐO MẮT (2 PHÚT): Còn {int(time_left)}s ({int(progress*100)}%)"
-            sub1 = "⭐ Dành cho người mới: Hãy cố gắng ngồi học tập trung nhất có thể trong 2 phút này!"
-            sub2 = "💡 AI đang tự động ghi nhớ góc ngồi học nghiêm túc & dáng mắt mở chuẩn của bạn"
+            sub1 = "⭐ Cố gắng ngồi học tập trung nhất có thể để AI học chuẩn góc ngồi & dáng mắt!"
+            sub2 = "💡 Khi đổi bàn học/chuyển chỗ: Chỉ cần bấm [C] để AI tự động học lại góc mới"
+            sub3 = "⚡ Mẹo: Bấm phím [C] thêm lần nữa bất kỳ lúc nào để HOÀN TẤT & LƯU NGAY!"
 
-            d_rec.text((25, 14), title, font=self.get_font(15), fill=(0, 255, 255))
-            d_rec.text((25, 42), sub1, font=self.get_font(12), fill=(255, 225, 90))
-            d_rec.text((25, 64), sub2, font=self.get_font(11), fill=(180, 235, 255))
+            d_rec.text((25, 12), title, font=self.get_font(15), fill=(0, 255, 255))
+            d_rec.text((25, 36), sub1, font=self.get_font(12), fill=(255, 225, 90))
+            d_rec.text((25, 56), sub2, font=self.get_font(11), fill=(180, 235, 255))
+            d_rec.text((25, 76), sub3, font=self.get_font(11), fill=(120, 255, 180))
             rec_roi[:] = cv2.cvtColor(np.array(rec_pil), cv2.COLOR_RGB2BGR)
 
         elif alert_msg:

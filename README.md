@@ -168,6 +168,10 @@ Tất cả các chức năng đều hỗ trợ **Click chuột trực tiếp** l
 **Q4: Dữ liệu học tập được lưu ở đâu?**  
 * **A:** Lịch sử học tập được lưu cục bộ ngay trong thư mục app (file `focus_history.json`). File này đã được thêm vào `.gitignore` để đảm bảo dữ liệu riêng tư của bạn không bao giờ bị lộ lên GitHub.
 
+**Q5: Nếu tôi đổi góc học tập, chuyển bàn học, hoặc đổi chỗ ngồi thì làm sao?**  
+* **A:** Cực kỳ đơn giản! Bạn chỉ cần bấm nút **`[C] Dạy góc (2p)`** (hoặc nhấn phím **`C`**). AI sẽ ngay lập tức kích hoạt đo lại góc ngồi mới của bạn và tự động lưu đè cấu hình mới vào máy.  
+* *Mẹo:* Nếu bạn không muốn đợi hết 2 phút, chỉ cần ngồi học theo góc mới khoảng 15-20 giây rồi **bấm lại phím `C` một lần nữa** là hệ thống sẽ lưu và hoàn tất ngay lập tức!
+
 ---
 
 ## 📄 Bản Quyền & Giấy Phép (License)
