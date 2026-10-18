@@ -120,6 +120,12 @@ class FocusDetector:
         self.is_study_zone_set = True
         self.is_recording_zone = False
 
+        # Tự động thích ứng góc học tập mới (Autonomous Zone Adaptation)
+        self.auto_zone_buffer = []          # Buffer mẫu góc quay khi người dùng đổi tư thế ngồi
+        self.last_auto_adapt_time = 0.0     # Cooldown giữa các lần thích ứng (tránh nhảy liên tục)
+        self.recent_auto_adapt_msg = None
+        self.recent_auto_adapt_until = 0.0
+
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"Không tìm thấy file model: {self.model_path}")
 
@@ -451,6 +457,7 @@ class FocusDetector:
             self.smooth_pitch.reset()
             self.smooth_yaw.reset()
             self.smooth_roll.reset()
+            self.auto_zone_buffer.clear()
 
             if getattr(self, "is_pitch_black", False):
                 self.away_start = None
@@ -553,6 +560,51 @@ class FocusDetector:
         is_active_phone = has_phone and (self.phone_detected_start is not None) and (now - self.phone_detected_start >= 1.0)
         is_reading_desk = (-70.0 <= pitch <= -8.0) and (abs(yaw) <= 55.0) and not is_active_phone
         self.last_seen_reading = is_reading_desk
+
+        # 5b. TỰ ĐỘNG THÍCH ỨNG GÓC HỌC MỚI (AUTONOMOUS POSE ADAPTATION)
+        # Tự động nhận diện khi người dùng đổi hướng ngồi / đổi góc quay webcam / xoay ghế
+        cur_anchor_yaw = (self.study_zone.get("yaw_min", -65.0) + self.study_zone.get("yaw_max", 65.0)) / 2.0
+        delta_yaw = yaw - cur_anchor_yaw
+        is_candidate_new_stance = (abs(delta_yaw) >= 18.0) and (not has_phone) and (avg_ear >= 0.15) and (mar <= 0.65) and (pitch >= -68.0)
+
+        if is_candidate_new_stance and (now - self.last_auto_adapt_time >= 12.0):
+            self.auto_zone_buffer.append((now, yaw, pitch, avg_ear))
+            self.auto_zone_buffer = [s for s in self.auto_zone_buffer if (now - s[0]) <= 3.2]
+
+            if len(self.auto_zone_buffer) >= 15:
+                time_span = self.auto_zone_buffer[-1][0] - self.auto_zone_buffer[0][0]
+                if time_span >= 2.0:
+                    yaws_in_buf = [s[1] for s in self.auto_zone_buffer]
+                    yaw_variance = max(yaws_in_buf) - min(yaws_in_buf)
+
+                    # Nếu góc quay trong 2.0s ổn định (dao động < 14 độ), người dùng đã ổn định tư thế mới
+                    if yaw_variance <= 14.0:
+                        new_anchor = float(np.median(yaws_in_buf))
+                        new_ear = float(np.median([s[3] for s in self.auto_zone_buffer]))
+
+                        self.study_zone = {
+                            "yaw_min": round(new_anchor - 60.0, 1),
+                            "yaw_max": round(new_anchor + 60.0, 1),
+                            "pitch_min": -70.0,
+                            "pitch_max": 35.0,
+                            "roll_min": -40.0,
+                            "roll_max": 40.0
+                        }
+                        if new_ear >= 0.14:
+                            self.ear_threshold = max(0.12, min(0.22, round(new_ear * 0.68, 2)))
+
+                        self.save_study_zone()
+                        self.last_auto_adapt_time = now
+                        self.auto_zone_buffer.clear()
+                        auto_adapt_msg = f"ĐÃ TỰ ĐỘNG THÍCH ỨNG GÓC HỌC MỚI ({new_anchor:+.0f}°) XONG! ✓"
+                        self.recent_auto_adapt_msg = auto_adapt_msg
+                        self.recent_auto_adapt_until = now + 2.5
+                        try:
+                            print(f"[+] 🎯 {auto_adapt_msg}")
+                        except Exception:
+                            pass
+        elif abs(delta_yaw) < 14.0:
+            self.auto_zone_buffer.clear()
 
         # Vùng học tập cá nhân hóa
         yaw_min = self.study_zone.get("yaw_min", -60.0)
@@ -762,6 +814,7 @@ class FocusDetector:
             "record_time_left": 0.0,
             "is_study_zone_set": self.is_study_zone_set,
             "focus_score": self.get_focus_score(),
+            "auto_adapted_zone": self.recent_auto_adapt_msg if (now < self.recent_auto_adapt_until) else None,
             "landmarks": landmarks
         }
 

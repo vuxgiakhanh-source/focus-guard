@@ -62,8 +62,11 @@
 8. **🌐 Nhận Diện Game & Mạng Xã Hội (Facebook, YouTube Học Tập, Game):**
    * Tự động nhận diện khi mở game hoặc mạng xã hội. Nếu đang xem video bài giảng (IELTS, Toán, Lập trình, Lofi...) trên YouTube, AI nhận biết đó là học tập và không báo động.
 
-9. **🔇 Ngắt Âm Thanh Tức Thì (Zero Audio Delay):**
-   * Ngay khoảnh khắc bạn quay lại bài học hoặc đặt điện thoại xuống, âm thanh cảnh báo lập tức dừng ngay mà không phát rền rĩ thêm một giây nào.
+9. **🎙 Giọng Nói Tự Nhiên & Chống Ngắt Ngang (Anti-Stuttering Voice Protection):**
+   * Khi cảnh báo, câu nhắc nhở ngắn được hoàn thành trọn vẹn và tự nhiên, triệt tiêu hoàn toàn hiện tượng "ngắp ngứ" hay giật tắt câu giữa chừng khi người học quay lại bài nhanh. Khi vào giờ giải lao hoặc bấm Tắt tiếng, âm thanh fade-out êm ái không gây chói tai.
+
+10. **🔄 Tự Động Thích Ứng Góc Ngồi Mới (Autonomous Pose Adaptation):**
+    * Khi bạn đổi tư thế ngồi, xoay ghế hoặc chỉnh góc webcam, AI sẽ tự động nhận biết bạn đang ngồi học ổn định tại góc mới sau 2.0 giây, tự động thiết lập lại tâm góc chuẩn mà không cần thao tác bấm phím, kèm banner xanh và thông báo xác nhận tức thì.
 
 ---
 

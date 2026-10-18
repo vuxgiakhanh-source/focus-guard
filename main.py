@@ -228,7 +228,7 @@ def run_focus_guard():
 
         # Nếu người dùng vừa tắt Facebook/YouTube -> Dừng cảnh báo giọng nói NGAY LẬP TỨC (Zero Lag)!
         if last_web_alerting and not is_web_alerting:
-            alert_mgr.stop()
+            alert_mgr.stop(min_play_sec=0, fade_ms=150)
 
         last_web_alerting = is_web_alerting
 
@@ -245,14 +245,17 @@ def run_focus_guard():
             result["reason"] = f"Đang tương tác ({web_distract['duration']:.1f}s)..."
 
 
-        # Theo dõi khi phiên học góc kết thúc
-        is_rec = result.get("is_recording_zone", False)
-        if last_recording_state and not is_rec:
-            alert_msg = "ĐÃ GHI NHỚ VÙNG HỌC & ĐO MẮT XONG!"
+        # Theo dõi tự động thích ứng góc học tập mới (Autonomous Zone Adaptation)
+        auto_msg = result.get("auto_adapted_zone")
+        if auto_msg and alert_msg != auto_msg:
+            alert_msg = auto_msg
             alert_msg_time = time.time()
-            toast_mgr.show_toast("FocusGuard AI", f"Đã ghi nhớ vùng học tập & cân chỉnh EAR ({detector.ear_threshold:.2f}) thành công! ✓", "zone_done", cooldown=2.0)
-            print(f"[+] Hoàn tất học góc học tập! Ngưỡng EAR: {detector.ear_threshold}")
-        last_recording_state = is_rec
+            toast_mgr.show_toast(
+                "FocusGuard Tự Động Thích Ứng",
+                "🎯 Đã nhận diện bạn đổi góc ngồi! Tự động tạo vùng học mới chuẩn xác.",
+                "auto_zone",
+                cooldown=6.0
+            )
 
         # 4. Vẽ hộp nhận diện điện thoại (Đỏ nếu đang CẦM TRÊN TAY, Lam nếu ĐẶT TĨNH TRÊN BÀN)
         if detected_phones and not is_break:
@@ -325,9 +328,9 @@ def run_focus_guard():
                 voice_cd = 7.0 if result["alert_type"] == "AWAY" else 3.5
                 alert_mgr.play_voice(result["alert_type"], cooldown=voice_cd)
         else:
-            # Ngay khi quay lại tập trung: Dừng âm thanh cảnh báo NGAY LẬP TỨC (Zero Audio Delay)!
+            # Ngay khi quay lại tập trung: Dừng âm thanh nếu đã phát xong câu cảnh báo (chống ngắt ngang ngắp ngứ)
             if last_alert_state:
-                alert_mgr.stop()
+                alert_mgr.stop(min_play_sec=1.4, fade_ms=250)
             last_alert_state = False
 
         # 6. Quản lý thông báo nổi
@@ -410,10 +413,12 @@ def run_focus_guard():
             print("[*] Đã reset điểm tập trung và đồng hồ Pomodoro.")
         elif action == "MUTE":
             is_muted = not is_muted
+            if is_muted:
+                alert_mgr.stop(min_play_sec=0, fade_ms=100)
             state_str = "TẮT" if is_muted else "BẬT"
             print(f"[*] Âm thanh cảnh báo: {state_str}")
 
-    alert_mgr.stop()
+    alert_mgr.stop(min_play_sec=0, fade_ms=100)
     phone_detector.stop()
     cap.release()
     cv2.destroyAllWindows()

@@ -84,11 +84,26 @@ class SoundAlertManager:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def stop(self):
-        """Dừng phát âm thanh ngay lập tức (Zero Audio Delay)"""
+    def stop(self, min_play_sec=1.2, fade_ms=250):
+        """
+        Dừng âm thanh mượt mà, chống hiện tượng ngắt ngang câu nói (ngắp ngứ / stuttering):
+        Nếu âm thanh mới bắt đầu phát chưa đủ min_play_sec (ví dụ câu nhắc 1.2s),
+        cho phép câu nói hoàn tất tự nhiên thay vì bị giật tắt giữa chừng.
+        """
+        now = time.time()
+        with self.lock:
+            if not self.is_playing:
+                return
+            if min_play_sec > 0 and (now - self.last_alert_time < min_play_sec):
+                # Đang phát câu thoại ngắn, cho phép phát trọn vẹn không bị ngắp ngứ
+                return
+
         if USE_PYGAME:
             try:
-                pygame.mixer.music.stop()
+                if fade_ms > 0:
+                    pygame.mixer.music.fadeout(fade_ms)
+                else:
+                    pygame.mixer.music.stop()
             except Exception:
                 pass
         with self.lock:
