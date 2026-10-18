@@ -81,11 +81,11 @@ class HUDRenderer:
         mute_text_col = (255, 160, 200) if is_muted else (210, 180, 255)
 
         buttons_def = [
-            ("CALIBRATE", 8,   132, "🎯 Dạy góc (2p)",  (25, 45, 75),  (100, 210, 255)),
-            ("POMODORO",  138, 256, "⏱ Pomodoro",      (25, 55, 45),  (110, 240, 175)),
-            ("MUTE",      262, 372, f"🔊 {mute_label}", mute_bg,       mute_text_col),
-            ("RESET",     378, 482, "🔄 Đặt lại",      (50, 42, 25),  (255, 205, 90)),
-            ("QUIT",      488, 608, "✕ Thoát & Lưu",    (65, 25, 35),  (255, 130, 130))
+            ("CALIBRATE", 8,   132, "[C] Dạy góc 2p",   (25, 45, 75),  (100, 210, 255)),
+            ("POMODORO",  138, 256, "[P] Pomodoro",      (25, 55, 45),  (110, 240, 175)),
+            ("MUTE",      262, 372, f"[M] {mute_label}", mute_bg,       mute_text_col),
+            ("RESET",     378, 482, "[R] Đặt lại",       (50, 42, 25),  (255, 205, 90)),
+            ("QUIT",      488, 608, "[Q] Thoát",         (65, 25, 35),  (255, 130, 130))
         ]
 
         for (btn_id, lx1, lx2, label, bg_color, text_color) in buttons_def:
@@ -186,7 +186,7 @@ class HUDRenderer:
 
             if pomo_state == "BREAK":
                 p_min, p_sec = divmod(pomo_time, 60)
-                status_title = f"☕ NGHỈ GIẢI LAO [{p_min:02d}:{p_sec:02d}]"
+                status_title = f"● NGHỈ GIẢI LAO [{p_min:02d}:{p_sec:02d}]"
                 sub_detail = "Thư giãn, nghe nhạc hoặc lướt điện thoại thoải mái!"
             else:
                 lbl = result.get("label", "ĐANG TẬP TRUNG")
@@ -198,10 +198,10 @@ class HUDRenderer:
             d_h.rounded_rectangle([6, 6, 215, 26], radius=4, fill=status_badge_bg, outline=theme_rgb, width=1)
             d_h.text((12, 8), status_title, font=self.get_font(12), fill=theme_rgb)
 
-            # Icon âm thanh nhỏ góc phải của header
-            sound_txt = "🔊 Loa Bật" if not is_muted else "🔇 Mute"
+            # Trạng thái âm thanh nhỏ góc phải của header
+            sound_txt = "● Loa Bật" if not is_muted else "○ Đã Tắt Loa"
             sound_col = (110, 240, 160) if not is_muted else (170, 170, 180)
-            d_h.text((433 - 72, 9), sound_txt, font=self.get_font(11), fill=sound_col)
+            d_h.text((433 - 78, 9), sound_txt, font=self.get_font(11), fill=sound_col)
 
             # Dòng mô tả chi tiết lý do (rất sạch và thoáng mắt)
             d_h.text((10, 28), sub_detail, font=self.get_font(11), fill=(225, 230, 240))
@@ -214,7 +214,7 @@ class HUDRenderer:
 
             mins, secs = divmod(int(session_duration_sec), 60)
             p_min, p_sec = divmod(pomo_time, 60)
-            pomo_badge_txt = f"⏱ {p_min:02d}:{p_sec:02d} [{'HỌC' if pomo_state=='WORK' else 'NGHỈ'}]"
+            pomo_badge_txt = f"POMO: {p_min:02d}:{p_sec:02d} [{'HỌC' if pomo_state=='WORK' else 'NGHỈ'}]"
             pomo_badge_bg = (20, 50, 35) if pomo_state == "WORK" else (55, 25, 45)
             pomo_badge_col = (100, 255, 180) if pomo_state == "WORK" else (255, 150, 220)
 
@@ -242,10 +242,10 @@ class HUDRenderer:
 
             # Pomodoro badge bo tròn
             d_sc.rounded_rectangle([8, 58, 164, 80], radius=4, fill=pomo_badge_bg, outline=pomo_badge_col, width=1)
-            d_sc.text((14, 62), pomo_badge_txt, font=self.get_font(12), fill=pomo_badge_col)
+            d_sc.text((12, 62), pomo_badge_txt, font=self.get_font(11), fill=pomo_badge_col)
 
             # Tổng thời gian phiên học
-            d_sc.text((10, 88), f"⌛ Đã học: {mins:02d}p {secs:02d}s", font=self.get_font(11), fill=(150, 160, 175))
+            d_sc.text((10, 88), f"Thời gian: {mins:02d}p {secs:02d}s", font=self.get_font(11), fill=(150, 160, 175))
             sc_roi[:] = cv2.cvtColor(np.array(sc_pil), cv2.COLOR_RGB2BGR)
             self.cached_score_card = sc_roi.copy()
 
@@ -259,20 +259,20 @@ class HUDRenderer:
             yaw_max_val = zone.get("yaw_max", 60.0)
 
             if yaw_min_val <= -170.0:
-                limit_str = f"Trái tự do ✓ | Phải ≤ {yaw_max_val:+.0f}°"
+                limit_str = f"Trái tự do | Phải <= {yaw_max_val:+.0f}°"
             elif yaw_max_val >= 170.0:
-                limit_str = f"Trái ≥ {yaw_min_val:+.0f}° | Phải tự do ✓"
+                limit_str = f"Trái >= {yaw_min_val:+.0f}° | Phải tự do"
             else:
                 limit_str = f"[{yaw_min_val:+.0f}°, {yaw_max_val:+.0f}°]"
 
-            face_dot = "🟢" if result.get("status") != "AWAY" else "🔴"
+            face_dot = "●" if result.get("status") != "AWAY" else "○"
             face_state = "Tại bàn" if result.get("status") != "AWAY" else "Rời bàn"
 
             pose_pil = Image.fromarray(cv2.cvtColor(pose_roi, cv2.COLOR_BGR2RGB))
             d_p = ImageDraw.Draw(pose_pil)
-            d_p.text((8, 6), f"{face_dot} {face_state}  |  📐 Quay: {yaw_val:+.0f}°", font=self.get_font(11), fill=(210, 230, 255))
-            d_p.text((8, 24), f"👁️ Mắt: {ear_val:.2f} (Ngưỡng nhắm: {ear_thresh:.2f})", font=self.get_font(11), fill=(185, 205, 225))
-            d_p.text((8, 40), f"⚙️ Vùng học cá nhân: {limit_str}", font=self.get_font(10), fill=(140, 160, 185))
+            d_p.text((8, 6), f"{face_dot} {face_state}  |  Góc quay: {yaw_val:+.0f}°", font=self.get_font(11), fill=(210, 230, 255))
+            d_p.text((8, 24), f"Mắt: {ear_val:.2f} (Ngưỡng: {ear_thresh:.2f})", font=self.get_font(11), fill=(185, 205, 225))
+            d_p.text((8, 40), f"Vùng cá nhân: {limit_str}", font=self.get_font(10), fill=(140, 160, 185))
 
             pose_roi[:] = cv2.cvtColor(np.array(pose_pil), cv2.COLOR_RGB2BGR)
             self.cached_pose_card = pose_roi.copy()
@@ -309,10 +309,10 @@ class HUDRenderer:
             d_rec.rounded_rectangle([bar_x1, bar_y, bar_x1 + bar_w, bar_y + 8], radius=4, fill=(45, 60, 80))
             d_rec.rounded_rectangle([bar_x1, bar_y, bar_x1 + int(bar_w * progress), bar_y + 8], radius=4, fill=(0, 255, 200))
 
-            title = f"🎯 AI ĐANG HỌC GÓC HỌC TẬP & ĐO MẮT (2 PHÚT): Còn {int(time_left)}s ({int(progress*100)}%)"
-            sub1 = "⭐ Cố gắng ngồi học tập trung nhất có thể để AI học chuẩn góc ngồi & dáng mắt!"
-            sub2 = "💡 Khi đổi bàn học/chuyển chỗ: Chỉ cần bấm [C] để AI tự động học lại góc mới"
-            sub3 = "⚡ Mẹo: Bấm phím [C] thêm lần nữa bất kỳ lúc nào để HOÀN TẤT & LƯU NGAY!"
+            title = f"● AI ĐANG HỌC GÓC HỌC TẬP & ĐO MẮT (2 PHÚT): Còn {int(time_left)}s ({int(progress*100)}%)"
+            sub1 = "• Cố gắng ngồi học tập trung nhất có thể để AI học chuẩn góc ngồi & dáng mắt!"
+            sub2 = "• Khi đổi bàn học/chuyển chỗ: Chỉ cần bấm [C] để AI tự động học lại góc mới"
+            sub3 = "• Mẹo: Bấm phím [C] thêm lần nữa bất kỳ lúc nào để HOÀN TẤT & LƯU NGAY!"
 
             d_rec.text((25, 12), title, font=self.get_font(15), fill=(0, 255, 255))
             d_rec.text((25, 36), sub1, font=self.get_font(12), fill=(255, 225, 90))
