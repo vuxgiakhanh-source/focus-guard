@@ -1,8 +1,8 @@
 # 🎯 FocusGuard PRO
 
 <p align="center">
-  <b>Hệ thống AI Giám Sát Học Tập & Nâng Cao Tập Trung Thời Gian Thực</b><br>
-  <i>100% Offline • Siêu Tiết Kiệm CPU (~4.8ms/frame) • Tự Do Mọi Góc Camera • Bảo Mật Tuyệt Đối</i>
+  <b>Hệ thống AI Giám Sát Học Tập & Siêu Kỷ Luật Thời Gian Thực</b><br>
+  <i>100% Offline • Siêu Tiết Kiệm CPU (~11.8ms/frame) • Tự Do Mọi Góc Camera • Bảo Mật Tuyệt Đối</i>
 </p>
 
 <p align="center">
@@ -17,56 +17,45 @@
 
 ## 📖 Giới Thiệu (Overview)
 
-**FocusGuard PRO** là trợ lý học tập cá nhân bằng thị giác máy tính (AI Computer Vision) thế hệ mới, được thiết kế để giải quyết bài toán mất tập trung, dùng điện thoại lén lút, ngủ gật và sa đà lướt mạng xã hội (Facebook / YouTube) trong giờ học.
+**FocusGuard PRO** là công cụ AI giám sát kỷ luật học tập cá nhân bằng thị giác máy tính (Computer Vision), được thiết kế để giải quyết dứt điểm các thói quen gây mất tập trung:
+* 📱 **Cầm điện thoại bấm lén** trong giờ học.
+* 😴 **Ngủ gật, nhắm mắt, ngáp ngủ**.
+* 🌐 **Sa đà lướt mạng xã hội** (Facebook, YouTube, TikTok...) trên máy tính.
+* 👀 **Ngoảnh mặt ra ngoài, bỏ bàn học đi nơi khác**.
 
-Toàn bộ mô hình AI xử lý **100% trên thiết bị (Offline)** — webcam không truyền bất kỳ hình ảnh hay dữ liệu nào ra Internet, đảm bảo tính riêng tư tuyệt đối cho người dùng.
+> [!IMPORTANT]
+> **Cam kết bảo mật 100%:** Toàn bộ mô hình AI chạy trực tiếp trên máy của bạn (Offline hoàn toàn). Webcam không lưu trữ video và không gửi bất kỳ hình ảnh nào ra Internet.
 
 ---
 
 ## 🌟 Tính Năng Nổi Bật (Key Features)
 
-### 1. 📐 Face-Centric Adaptive Camera (Tự Do Mọi Góc Đặt Máy)
-* **Không ép buộc vị trí camera:** Bạn có thể nâng cao laptop, đặt máy chéo bên trái hay gập mở màn hình tùy ý.
-* **Cơ chế linh hoạt:** Chỉ cần camera nhìn thấy khuôn mặt bạn là hệ thống tính đang tập trung học.
-* **Tự do quay trái:** Góc quay trái mở rộng tối đa 180° (thoải mái nhìn sang sách vở hoặc màn hình phụ bên trái).
-* **Cảnh báo quay phải > 70°:** Chỉ kích hoạt khi bạn ngoảnh hẳn đầu ra xa khỏi bàn học.
+1. **📐 Tự Do Mọi Góc Camera (Face-Centric Adaptive Mode):**
+   * Không ép bạn phải ngồi cứng đờ hay đặt camera thẳng mặt. Bạn có thể gập mở màn hình laptop, nâng đế tản nhiệt, hay đặt máy ở góc chéo tùy thích.
+   * **Quy tắc vàng:** Chỉ cần camera nhìn thấy khuôn mặt bạn $\rightarrow$ AI tính là đang tập trung học!
+   * **Quay trái thoải mái vô hạn (180°):** Thoải mái nhìn sang sách vở hoặc màn hình phụ bên trái.
+   * **Cảnh báo quay phải > 70°:** Chỉ nhắc nhở khi bạn quay hẳn đầu đi nơi khác xa khỏi bàn học.
 
-### 2. 📱 Phát Hiện Cầm Điện Thoại Thời Gian Thực (YOLOv8 Nano)
-* Sử dụng mô hình nhận diện vật thể YOLOv8n siêu nhẹ chạy luồng riêng biệt (~5 FPS).
-* Nhận diện chính xác khi bạn cầm điện thoại trong vùng bàn học và lập tức phát cảnh báo bằng giọng nói & khung đỏ trực quan.
-* Tự động tạm dừng quét điện thoại trong 5 phút giải lao Pomodoro.
+2. **📱 Bắt Quả Tang Cầm Điện Thoại (YOLOv8 Nano):**
+   * Quét và khoanh khung đỏ kèm tỷ lệ % tin cậy ngay khi phát hiện điện thoại trên tay.
+   * Tự động tắt quét trong giờ giải lao Pomodoro để máy luôn mát rượi.
 
-### 3. 🌐 Giám Sát Thao Tác Facebook & YouTube Thông Minh (Active Tracking Only)
-* **Nghe nhạc Lofi / Study Music trên YouTube hoặc để mở tab:** Hoàn toàn **KHÔNG** bị báo động.
-* **Thực sự đang dùng (cuộn feed, click chuột, gõ phím/chat) > 2.5 giây:** AI lập tức kích hoạt cảnh báo giọng nói riêng, popup Windows Toast và trừ điểm tập trung.
+3. **🌐 Giám Sát Mạng Xã Hội Thông Minh (Facebook / YouTube Active Monitor):**
+   * **Mở tab để đó nghe nhạc Lofi / Study Music:** Hoàn toàn **KHÔNG** bị báo động.
+   * **Thực sự dùng (cuộn feed, click chuột, gõ phím/chat) > 2.5s:** AI phát cảnh báo giọng nói riêng, trừ điểm tập trung và bắn popup thông báo.
 
-### 4. ⏱ Tích Hợp Chu Kỳ Pomodoro (25 Phút Học / 5 Phút Nghỉ)
-* Bấm **`P`** hoặc click chuột vào nút `[⏱ Pomodoro]` trên màn hình.
-* **Trong 25 phút học:** Giám sát nghiêm ngặt, giữ kỷ luật tối đa.
-* **Trong 5 phút nghỉ:** Màn hình chuyển tông màu tím hồng thư giãn, tự động ngắt toàn bộ cảnh báo để bạn giải lao, lướt điện thoại thoải mái. Có giọng nói nhắc nhở khi hết giờ nghỉ!
+4. **⏱ Tích Hợp Đồng Hồ Pomodoro (25 phút học / 5 phút nghỉ):**
+   * Bấm **`P`** hoặc click chuột trên màn hình để bật/tắt.
+   * Hết giờ học có giọng nói nhắc nghỉ ngơi; hết giờ giải lao có chuông gọi quay lại học.
 
-### 5. 👁 Iris Gaze Tracking & Tự Cân Chỉnh EAR
-* Theo dõi tỷ lệ dịch chuyển con ngươi (Iris) thời gian thực.
-* Tự động học dáng mắt và tính toán `ear_threshold` riêng cho từng người (chống báo nhầm buồn ngủ đối với người đeo kính hoặc mắt híp).
+5. **👓 Tự Đo Độ Mở Mắt Cho Người Đeo Kính & Mắt Híp:**
+   * Trong lúc học góc 60s, AI tự đo độ mở mắt tự nhiên của bạn để thiết lập ngưỡng `ear_threshold` tối ưu riêng, triệt tiêu 100% việc báo nhầm buồn ngủ khi đeo kính phản quang.
 
-### 6. 🔔 Thông Báo Đa Tầng (Windows Toast & Voice Alerts)
-* Cảnh báo bằng giọng nói tiếng Việt tự nhiên phát sinh từ Edge TTS.
-* Khi FocusGuard bị che hoặc thu nhỏ dưới thanh Taskbar, Windows Toast Notification ở góc dưới màn hình vẫn gửi thông báo kịp thời.
+6. **📈 Biểu Đồ Sparkline Mini Thời Gian Thực:**
+   * Hiển thị đường dao động độ tập trung 20 giây gần nhất ngay trong thẻ Focus Score.
 
-### 7. 📊 Thống Kê & Lưu Lịch Sử Phiên Học
-* Tự động lưu toàn bộ thời gian học, điểm tập trung trung bình, chuỗi phiên học (streak) vào file cục bộ.
-* Bảng tổng kết chi tiết hiển thị ngay khi kết thúc phiên.
-
----
-
-## ⚡ Kiến Trúc Tối Ưu Hiệu Năng (~4.8ms/frame - 0% Nóng Máy)
-
-FocusGuard PRO được tối ưu chuyên sâu ở cấp độ hệ thống và C-Level:
-* **Zero-Allocation Memory Buffers:** Tái sử dụng vùng nhớ đệm RGB và Landmark points, loại trừ hoàn toàn việc cấp phát bộ nhớ liên tục.
-* **Windows Native Multimedia 1ms Timer:** Kích hoạt `timeBeginPeriod(1)` đảm bảo chu kỳ khung hình chính xác, không giật lag.
-* **Cadence Text Caching:** Chỉ rasterize chữ FreeType ở tần suất 15 FPS và cache kết quả, giảm 90% tải vẽ giao diện.
-* **Single-Thread Isolated Torch Engine:** Khóa YOLOv8 chạy đơn luồng độc lập, triệt tiêu xung đột CPU và kiểm soát nhiệt độ máy luôn mát mẻ.
-* **Garbage Collection Throttling:** Tinh chỉnh ngưỡng dọn rác GC tránh hiện tượng drop frame định kỳ.
+7. **🔔 Thông Báo Đa Tầng (Windows Toast & Voice Alerts):**
+   * Ngay cả khi thu nhỏ cửa sổ để làm bài tập trên Word hay trình duyệt, popup thông báo Windows Toast vẫn bật lên nhắc nhở kịp thời.
 
 ---
 
@@ -75,82 +64,114 @@ FocusGuard PRO được tối ưu chuyên sâu ở cấp độ hệ thống và 
 ### 1. Yêu Cầu Hệ Thống
 * Hệ điều hành: Windows 10 / 11 (64-bit).
 * Python 3.10, 3.11 hoặc 3.12.
-* Webcam hoạt động bình thường.
+* Webcam đang hoạt động bình thường.
 
-### 2. Tải Mã Nguồn & Cài Đặt Thư Viện
+### 2. Tải Mã Nguồn & Cài Thư Viện
 
 ```powershell
-# Clone kho lưu trữ
-git clone https://github.com/vuxgiakhanh/focus-guard.git
+# Clone kho mã nguồn về máy
+git clone git@github.com:vuxgiakhanh-source/focus-guard.git
 cd focus-guard
 
-# Khuyến nghị: Tạo môi trường ảo (Virtual Environment)
+# Khuyến nghị: Tạo môi trường ảo
 python -m venv venv
 .\venv\Scripts\activate
 
-# Cài đặt các thư viện cần thiết
+# Cài đặt thư viện phụ thuộc
 pip install -r requirements.txt
 ```
 
-> **Ghi chú:** Các file weights (`face_landmarker.task` 3.7MB và `yolov8n.pt` 6.5MB) cùng âm thanh cảnh báo đã được đính kèm sẵn trong kho lưu trữ — bạn không cần phải tải thêm gì từ bên ngoài!
+> **Ghi chú:** Trọng số AI (`face_landmarker.task` 3.7MB, `yolov8n.pt` 6.5MB) và toàn bộ âm thanh cảnh báo đã đính kèm sẵn trong kho lưu trữ — bạn không cần tải thêm bất kỳ file nào từ bên ngoài!
 
 ---
 
-## 🚀 Hướng Dẫn Sử Dụng (Quick Start)
+## 🚀 Hướng Dẫn Khởi Chạy (Quick Start)
 
-### Cách 1: Khởi Chạy Nhanh Từ Màn Hình (Tạo Desktop Icon)
-Chạy script tự động tạo shortcut FocusGuard PRO ra ngoài Desktop (chỉ cần chạy 1 lần):
+### Cách 1: Bấm Icon Từ Desktop (Khuyên Dùng)
+Chạy lệnh này một lần duy nhất để tạo icon ra ngoài màn hình chính:
 ```powershell
 powershell -ExecutionPolicy Bypass -File install_shortcut.ps1
 ```
-Sau đó, bạn chỉ cần ra ngoài Desktop và **nhấp đúp chuột vào icon FocusGuard PRO** để học bài!
+Sau đó ra ngoài Desktop, nhấp đúp vào biểu tượng **FocusGuard PRO** (khởi động êm ái, không hiện cửa sổ cmd đen).
 
 ### Cách 2: Khởi Chạy Bằng Lệnh
 ```powershell
 python main.py
 ```
 
-### ⌨️ Phím Tắt & Nút Bấm Chuột
+---
 
-| Thao Tác Chuột | Phím Tắt | Chức Năng |
-| :---: | :---: | :--- |
-| Click **`[C] Dạy góc học`** | **`C`** | Cân chỉnh góc học tập & tự đo dáng mắt trong 60 giây |
-| Click **`[P] Pomodoro`** | **`P`** | Bật / Tắt chu kỳ Pomodoro (25 phút học - 5 phút nghỉ) |
-| Click **`[M] Âm thanh`** | **`M`** | Bật / Tắt âm thanh giọng nói nhắc nhở (Mute/Unmute) |
-| Click **`[R] Reset`** | **`R`** | Đặt lại điểm tập trung và đồng hồ học tập |
-| Click **`[Q] Thoát`** | **`Q`** / **`Esc`** | Thoát ứng dụng, tự lưu lịch sử và hiển thị báo cáo |
+## 📘 HƯỚNG DẪN SỬ DỤNG CHI TIẾT TỪ A - Z (User Guide)
+
+### 🎯 Quy trình 1 buổi học chuẩn:
+
+#### Bước 1: Khởi động & Cân chỉnh camera
+* Mở app lên. Đặt laptop hoặc webcam ở góc bạn thấy thoải mái nhất (thẳng mặt hoặc chéo bên đều được).
+* Đảm bảo khung camera có nhìn thấy mặt bạn.
+
+#### Bước 2: Dạy AI góc học tập & Dáng mắt (Khuyên dùng khi bắt đầu)
+* Bấm nút **`[C] Dạy góc học`** trên màn hình (hoặc nhấn phím **`C`**).
+* Màn hình sẽ hiện thanh tiến trình đếm ngược 60 giây.
+* Trong 60 giây này, bạn chỉ cần ngồi học bình thường (đọc sách, nhìn màn hình, viết bài...).
+* 👉 **AI sẽ tự động:**
+  1. Ghi nhớ góc ngồi học tự nhiên của bạn.
+  2. Đo độ mở mắt của bạn (đặc biệt hữu ích nếu bạn **đeo kính cận** hoặc có **dáng mắt híp**) để không bao giờ bị báo nhầm buồn ngủ!
+
+#### Bước 3: Học bài & Kỷ luật tự giác
+Trong quá trình học, AI sẽ âm thầm giám sát:
+* 😴 **Nếu bạn nhắm mắt quá 2 giây:** Giọng nói tiếng Việt sẽ nhắc *"Bạn đang buồn ngủ, hãy tập trung!"* và viền đỏ màn hình nhấp nháy.
+* 📱 **Nếu bạn nhấc điện thoại lên tay:** Khung màu đỏ lập tức khóa chặt vị trí chiếc điện thoại và phát loa cảnh báo.
+* 🌐 **Nếu bạn mở Facebook/YouTube lướt:** Sau 2.5 giây thao tác chuột/phím liên tục, AI sẽ lên tiếng nhắc nhở quay lại học và trừ điểm tập trung.
+* ☕ **Bật Pomodoro:** Bấm **`P`** để vào chu kỳ chuẩn 25 phút học tập trung cao độ.
+
+#### Bước 4: Nghỉ giải lao (Pomodoro Break)
+* Khi hết 25 phút học, chuông báo sẽ reo và màn hình chuyển sang tông **màu tím hồng thư giãn**.
+* Trong 5 phút này: Toàn bộ cảnh báo camera, điện thoại và lướt web sẽ **tự động tắt 100%**. Bạn có thể thoải mái bấm điện thoại, nghe nhạc, giải trí.
+* Khi hết 5 phút nghỉ: Giọng nói sẽ thông báo hết giờ nghỉ để bạn quay lại bàn học!
+
+#### Bước 5: Kết thúc phiên học & Xem báo cáo
+* Khi học xong: Bấm nút **`[Q] Thoát`** (hoặc nhấn phím **`Q`** / nút **`X`** cửa sổ).
+* Hệ thống sẽ tự động:
+  1. Bắn thông báo Windows Toast tổng kết thời gian học và điểm tập trung.
+  2. In bảng báo cáo chi tiết ra màn hình (số lần cầm điện thoại, số lần lướt mạng xã hội, chu kỳ Pomodoro).
+  3. Tự động cộng dồn vào lịch sử học tập tích lũy.
 
 ---
 
-## 📂 Cấu Trúc Dự Án (Project Structure)
+## ⌨️ Bảng Phím Tắt & Nút Bấm Điều Khiển
 
-```text
-focus-guard/
-├── main.py                   # Điểm khởi chạy chính & vòng lặp video 30 FPS
-├── detector.py               # Xử lý MediaPipe, Iris, Head Pose, Blinking, CLAHE
-├── phone_detector.py         # Nhận diện điện thoại bằng YOLOv8 Nano đa luồng
-├── app_monitor.py            # Giám sát thao tác người dùng trên Facebook/YouTube
-├── pomodoro.py               # Quản lý chu kỳ Pomodoro 25/5
-├── ui_utils.py               # Giao diện HUD bán trong suốt, Sparkline, bảng nút bấm
-├── alert.py                  # Quản lý phát âm thanh cảnh báo đa luồng
-├── toast_notifier.py         # Bắn thông báo Windows Native Toast
-├── history.py                # Quản lý lịch sử và thống kê chuỗi học tập
-├── requirements.txt          # Danh sách thư viện Python
-├── sounds/                   # Thư mục âm thanh cảnh báo tiếng Việt
-├── face_landmarker.task      # Trọng số MediaPipe Face Landmark
-├── yolov8n.pt                # Trọng số YOLOv8 Nano
-├── FocusGuard.bat            # File khởi chạy ngầm (không hiện cửa sổ cmd)
-├── FocusGuard_Console.bat    # File khởi chạy có console (để debug)
-├── install_shortcut.ps1      # Script tạo icon ra màn hình Desktop
-├── LICENSE                   # Giấy phép MIT
-└── README.md                 # Tài liệu hướng dẫn sử dụng
-```
+Tất cả các chức năng đều hỗ trợ **Click chuột trực tiếp** lên thanh điều khiển ở đáy cửa sổ hoặc bấm phím tắt:
+
+| Nút Bấm Chuột | Phím Tắt | Chức Năng |
+| :---: | :---: | :--- |
+| **`[C] Dạy góc học`** | **`C`** | Bắt đầu đo góc ngồi học và dáng mắt trong 60 giây |
+| **`[P] Pomodoro`** | **`P`** | Bật / Tắt chu kỳ đếm giờ Pomodoro (25 phút học / 5 phút nghỉ) |
+| **`[M] Âm thanh`** | **`M`** | Tắt / Mở âm thanh giọng nói cảnh báo (hữu ích khi ngồi thư viện) |
+| **`[R] Reset`** | **`R`** | Đặt lại điểm tập trung 100% và đồng hồ thời gian học |
+| **`[Q] Thoát`** | **`Q`** / **`Esc`** | Thoát ứng dụng an toàn, lưu lịch sử và hiển thị báo cáo |
+
+---
+
+## ❓ Câu Hỏi Thường Gặp (FAQ)
+
+**Q1: Ứng dụng có làm nóng máy hay tốn pin khi chạy lâu không?**  
+* **A:** Hoàn toàn không! FocusGuard PRO chạy với tần suất xử lý tối ưu ~11.8ms/frame (chỉ tốn ~35% chu kỳ một luồng CPU), các luồng AI chạy đơn luồng độc lập, đảm bảo máy luôn êm mát và tiết kiệm pin.
+
+**Q2: Nếu tôi ngồi học ở thư viện hoặc quán cà phê thì làm sao?**  
+* **A:** Bạn chỉ cần click nút **`[M] Âm thanh`** (hoặc nhấn phím **`M`**) để chuyển sang chế độ im lặng `[MUTE]`. Mọi cảnh báo sẽ chuyển sang dạng viền đỏ trực quan trên màn hình và popup Windows Toast, không gây ồn ào xung quanh.
+
+**Q3: Tôi đeo kính gọng dày hay bị báo buồn ngủ oan thì chỉnh thế nào?**  
+* **A:** Bạn chỉ cần bấm phím **`C`** một lần. AI sẽ đo mức độ mở mắt xuyên qua tròng kính của bạn trong 60s và tự động hạ ngưỡng phát hiện nhắm mắt về mức chuẩn xác riêng cho bạn.
+
+**Q4: Dữ liệu học tập được lưu ở đâu?**  
+* **A:** Lịch sử học tập được lưu cục bộ ngay trong thư mục app (file `focus_history.json`). File này đã được thêm vào `.gitignore` để đảm bảo dữ liệu riêng tư của bạn không bao giờ bị lộ lên GitHub.
 
 ---
 
 ## 📄 Bản Quyền & Giấy Phép (License)
 
-Dự án được phân phối dưới giấy phép [MIT License](LICENSE). Bạn hoàn toàn tự do sử dụng, chỉnh sửa và chia sẻ cho cộng đồng.
+Dự án được phân phối dưới giấy phép mã nguồn mở [MIT License](LICENSE).
 
 Tác giả: **Vũ Gia Khánh**  
-Email: [vuxgiakhanh@gmail.com](mailto:vuxgiakhanh@gmail.com)
+Email: [vuxgiakhanh@gmail.com](mailto:vuxgiakhanh@gmail.com)  
+GitHub: [@vuxgiakhanh-source](https://github.com/vuxgiakhanh-source)
