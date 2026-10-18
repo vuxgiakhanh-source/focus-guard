@@ -63,7 +63,15 @@ def run_focus_guard():
     pomodoro = PomodoroTimer(work_min=25, break_min=5)
     app_monitor = AppDistractionMonitor(active_operate_thresh_sec=2.5, idle_timeout_sec=2.0)
 
-    cap = cv2.VideoCapture(0)
+    # Khởi tạo camera với DirectShow (mở cực nhanh <0.2s trên Windows) và tự động thử camera 1 nếu camera 0 bận
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(1)
+
     if not cap.isOpened():
         print("[-] Không thể mở Webcam. Vui lòng kiểm tra quyền camera hoặc cắm webcam!")
         try:
@@ -144,6 +152,10 @@ def run_focus_guard():
             time.sleep(0.03)
             continue
         failed_frames_count = 0
+
+        # Đảm bảo độ phân giải luôn chuẩn xác 640x480 trên mọi loại webcam (tránh giật lag do webcam 1080p/4K)
+        if frame.shape[1] != 640 or frame.shape[0] != 480:
+            frame = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_LINEAR)
 
         cv2.flip(frame, 1, dst=frame)
 
@@ -289,6 +301,7 @@ def run_focus_guard():
             state_str = "TẮT" if is_muted else "BẬT"
             print(f"[*] Âm thanh cảnh báo: {state_str}")
 
+    alert_mgr.stop()
     phone_detector.stop()
     cap.release()
     cv2.destroyAllWindows()

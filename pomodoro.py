@@ -13,6 +13,7 @@ class PomodoroTimer:
         self.state = "WORK" # "WORK" hoặc "BREAK"
         self.is_active = True
         self.state_start_time = time.time()
+        self.pause_start_time = 0.0
         self.completed_cycles = 0
 
     def update(self):
@@ -22,7 +23,9 @@ class PomodoroTimer:
         - event: 'BREAK_START' (khi vừa hết giờ học), 'BREAK_END' (khi vừa hết giờ nghỉ), hoặc None
         """
         if not self.is_active:
-            return self.state, 0, None
+            target_sec = self.work_sec if self.state == "WORK" else self.break_sec
+            elapsed = self.pause_start_time - self.state_start_time
+            return self.state, max(0, int(target_sec - elapsed)), None
 
         now = time.time()
         elapsed = now - self.state_start_time
@@ -47,9 +50,19 @@ class PomodoroTimer:
         return self.state, int(time_left), event
 
     def toggle(self):
-        self.is_active = not self.is_active
+        now = time.time()
+        if self.is_active:
+            # Chuyển sang tạm dừng: lưu lại mốc thời gian tạm dừng
+            self.pause_start_time = now
+            self.is_active = False
+        else:
+            # Tiếp tục: bù trừ chính xác khoảng thời gian vừa tạm dừng
+            if self.pause_start_time > 0:
+                self.state_start_time += (now - self.pause_start_time)
+            self.is_active = True
         return self.is_active
 
     def reset(self):
         self.state = "WORK"
         self.state_start_time = time.time()
+        self.pause_start_time = 0.0

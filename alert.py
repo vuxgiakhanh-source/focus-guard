@@ -66,3 +66,11 @@ class SoundAlertManager:
                     self.is_playing = False
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def stop(self):
+        """Dừng phát âm thanh ngay lập tức"""
+        if USE_PYGAME:
+            try:
+                pygame.mixer.music.stop()
+            except Exception:
+                pass

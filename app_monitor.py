@@ -47,7 +47,8 @@ class AppDistractionMonitor:
             lii = LASTINPUTINFO()
             lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
             if self.user32.GetLastInputInfo(ctypes.byref(lii)):
-                millis = self.kernel32.GetTickCount() - lii.dwTime
+                tick_now = self.kernel32.GetTickCount()
+                millis = (tick_now - lii.dwTime) & 0xFFFFFFFF
                 return max(0.0, millis / 1000.0)
         except Exception:
             pass

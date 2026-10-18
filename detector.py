@@ -345,6 +345,8 @@ class FocusDetector:
         is_infer_frame = (self.frame_idx % 2 == 0)
         if is_infer_frame:
             enhanced_frame = self.apply_clahe_enhancement(frame_bgr)
+            if self.frame_rgb_buffer.shape[:2] != (h, w):
+                self.frame_rgb_buffer = np.empty((h, w, 3), dtype=np.uint8)
             cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2RGB, dst=self.frame_rgb_buffer)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=self.frame_rgb_buffer)
             result = self.landmarker.detect(mp_image)
