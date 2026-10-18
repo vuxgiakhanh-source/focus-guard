@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
-# GIỚI HẠN TUYỆT ĐỐI 1 THREAD CHO MỌI THƯ VIỆN TOÁN HỌC & AI (Khóa chặt CPU <= 15%)
+# Giới hạn thread cho BLAS/OpenCV/PyTorch; đây không phải mức trần CPU cho toàn app.
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -27,11 +27,7 @@ import ctypes
 # Tối ưu Garbage Collector: Giảm tần suất dọn dẹp để triệt tiêu hiện tượng giật khung hình
 gc.set_threshold(50000, 15, 15)
 
-# Bật đồng hồ thời gian thực Windows độ chính xác cao 1ms
-try:
-    ctypes.windll.winmm.timeBeginPeriod(1)
-except Exception:
-    pass
+# 1ms timer resolution is not requested at the 10 FPS rate.
 
 # Đảm bảo in UTF-8 không lỗi trên Windows
 try:
@@ -50,6 +46,8 @@ from toast_notifier import WindowsToastManager
 from app_monitor import AppDistractionMonitor
 
 WIN_TITLE = "FocusGuard - AI Distraction & Drowsiness Detector"
+TARGET_FPS = 10
+BREAK_TARGET_FPS = 5
 
 _instance_mutex = None
 
@@ -152,7 +150,7 @@ def run_focus_guard():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    cap.set(cv2.CAP_PROP_FPS, 20)
+    cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 
     # Đăng ký sự kiện Click chuột lên các nút giao diện
     mouse_click_action = None
@@ -194,8 +192,7 @@ def run_focus_guard():
     alert_msg_time = 0
     last_recording_state = False
 
-    TARGET_FPS = 20
-    FRAME_INTERVAL = 1.0 / TARGET_FPS  # 0.050 giây (20 FPS mượt mà chuẩn công thái học)
+
 
     failed_frames_count = 0
     while True:
@@ -229,6 +226,7 @@ def run_focus_guard():
             print("[*] POMODORO: Hết giờ nghỉ! Bắt đầu buổi học tiếp theo!")
 
         is_break = (pomo_state == "BREAK")
+        frame_interval = 1.0 / (BREAK_TARGET_FPS if is_break else TARGET_FPS)
 
         # 2. Quét điện thoại ngầm bằng YOLOv8 (Tự động ngủ 100% trong giờ giải lao để làm mát máy)
         if not is_break:
@@ -251,7 +249,7 @@ def run_focus_guard():
         last_web_alerting = is_web_alerting
 
         if is_web_alerting:
-            detector._update_energy("DISTRACTED", time.time())
+            detector.override_current_energy_status("DISTRACTED")
             result["focus_score"] = detector.get_focus_score()
             result["status"] = "DISTRACTED"
             result["label"] = f"PHÁT HIỆN ĐANG DÙNG {web_distract['label'].upper()}!"
@@ -360,9 +358,9 @@ def run_focus_guard():
             print("[*] Đóng cửa sổ ứng dụng.")
             break
 
-        # Precision Frame Pacer (Khóa chặt CPU <= 15%, ngủ đúng thời gian còn lại của frame 50ms)
+        # Giới hạn nhịp xử lý; thời gian suy luận AI vẫn phụ thuộc cấu hình máy.
         loop_elapsed = time.perf_counter() - loop_start
-        remaining = FRAME_INTERVAL - loop_elapsed
+        remaining = frame_interval - loop_elapsed
         wait_ms = max(1, int(remaining * 1000)) if remaining > 0 else 1
         key = cv2.waitKey(wait_ms) & 0xFF
 
@@ -411,7 +409,9 @@ def run_focus_guard():
             hud.score_history = [100.0, 100.0]
             start_time = time.time()
             pomodoro.reset()
-            print("[*] Đã reset điểm tập trung và đồng hồ Pomodoro.")
+            phone_events = web_events = distraction_events = drowsy_events = 0
+            last_alert_state = False
+            print("[*] Đã reset điểm, bộ đếm sự kiện, đồng hồ Pomodoro và phiên học.")
         elif action == "MUTE":
             is_muted = not is_muted
             if is_muted:
@@ -424,10 +424,7 @@ def run_focus_guard():
     cap.release()
     cv2.destroyAllWindows()
 
-    try:
-        ctypes.windll.winmm.timeEndPeriod(1)
-    except Exception:
-        pass
+# No matching timeBeginPeriod call was made.
 
     final_score = detector.get_focus_score()
 

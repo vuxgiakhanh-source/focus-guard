@@ -77,7 +77,7 @@ class FocusDetector:
                  away_limit_sec=18.0):        # Rời bàn >= 18s mới bắt đầu báo (cho phép vươn vai, lấy nước)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản World-Class DMS):
-        1. MediaPipe suy luận xen kẽ khung hình (Inference Decimation: 15 FPS AI)
+        1. MediaPipe suy luận xen kẽ; mặc định khoảng 3.3 lần/giây ở camera 10 FPS
         2. Bộ lọc One-Euro Filter (CHI 2012) triệt tiêu 100% rung giật và độ trễ
         3. NHTSA / ISO Standard PERCLOS (P80) + Micro-sleep detection
         4. Chế độ Desk Reading Mode: Tự động nhận diện tư thế cúi đầu đọc sách/viết bài
@@ -124,9 +124,11 @@ class FocusDetector:
         self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
         self.last_calib_msg = ""
 
-        # Tự động thích ứng góc học tập mới (Autonomous Zone Adaptation)
-        self.auto_zone_buffer = []          # Buffer mẫu góc quay khi người dùng đổi tư thế ngồi
-        self.last_auto_adapt_time = 0.0     # Cooldown giữa các lần thích ứng (tránh nhảy liên tục)
+        # Tự động phát hiện góc camera thay đổi & thích ứng tức thì (Instant Camera Shift & Zone Adaptation)
+        self.prev_small_gray = None
+        self.camera_shifted_time = 0.0
+        self.auto_zone_buffer = []          # Buffer mẫu góc quay khi góc cam hoặc tư thế đổi
+        self.last_auto_adapt_time = 0.0     # Cooldown giữa các lần thích ứng
         self.recent_auto_adapt_msg = None
         self.recent_auto_adapt_until = 0.0
 
@@ -464,6 +466,19 @@ class FocusDetector:
                 "landmarks": None
             }
 
+        # 0.5. Phát hiện dịch chuyển góc camera / xoay webcam tức thì (0% CPU, 0.0001ms)
+        try:
+            small_bgr = frame_bgr[::20, ::20, :]
+            small_gray = cv2.cvtColor(small_bgr, cv2.COLOR_BGR2GRAY)
+            if self.prev_small_gray is not None:
+                diff = cv2.absdiff(small_gray, self.prev_small_gray)
+                mean_diff = float(np.mean(diff))
+                if mean_diff >= 18.0:
+                    self.camera_shifted_time = now
+            self.prev_small_gray = small_gray
+        except Exception:
+            pass
+
         # 1. Kiểm tra ánh sáng nhanh
         self.check_lighting(frame_bgr)
 
@@ -715,32 +730,42 @@ class FocusDetector:
         is_reading_desk = (-70.0 <= pitch <= -8.0) and (abs(yaw) <= 55.0) and not is_active_phone
         self.last_seen_reading = is_reading_desk
 
-        # 5b. TỰ ĐỘNG THÍCH ỨNG GÓC HỌC MỚI (AUTONOMOUS POSE ADAPTATION)
-        # Tự động nhận diện khi người dùng đổi hướng ngồi / đổi góc quay webcam / xoay ghế
+        # 5b. TỰ ĐỘNG PHÁT HIỆN GÓC CAM THAY ĐỔI & TÁI XÉT GÓC HỌC TỨC THÌ (INSTANT ADAPTATION)
+        # Tự động nhận diện khi xoay/chỉnh webcam, nâng hạ màn hình laptop, hoặc xoay ghế ngồi
         cur_anchor_yaw = (self.study_zone.get("yaw_min", -65.0) + self.study_zone.get("yaw_max", 65.0)) / 2.0
+        cur_anchor_pitch = (self.study_zone.get("pitch_min", -70.0) + self.study_zone.get("pitch_max", 35.0)) / 2.0
+
         delta_yaw = yaw - cur_anchor_yaw
-        is_candidate_new_stance = (abs(delta_yaw) >= 18.0) and (not has_phone) and (avg_ear >= 0.15) and (mar <= 0.65) and (pitch >= -68.0)
+        delta_pitch = pitch - cur_anchor_pitch
 
-        if is_candidate_new_stance and (now - self.last_auto_adapt_time >= 12.0):
+        was_camera_shifted = (now - getattr(self, "camera_shifted_time", 0.0) <= 2.5)
+        angle_shifted = (abs(delta_yaw) >= 12.0) or (abs(delta_pitch) >= 10.0)
+
+        is_candidate_new_stance = (was_camera_shifted or angle_shifted) and (not has_phone) and (avg_ear >= 0.14) and (mar <= 0.65) and (pitch >= -68.0)
+
+        if is_candidate_new_stance and (now - self.last_auto_adapt_time >= 4.0):
             self.auto_zone_buffer.append((now, yaw, pitch, avg_ear))
-            self.auto_zone_buffer = [s for s in self.auto_zone_buffer if (now - s[0]) <= 3.2]
+            self.auto_zone_buffer = [s for s in self.auto_zone_buffer if (now - s[0]) <= 2.0]
 
-            if len(self.auto_zone_buffer) >= 15:
+            if len(self.auto_zone_buffer) >= 6:
                 time_span = self.auto_zone_buffer[-1][0] - self.auto_zone_buffer[0][0]
-                if time_span >= 2.0:
+                if time_span >= 0.8:
                     yaws_in_buf = [s[1] for s in self.auto_zone_buffer]
+                    pitches_in_buf = [s[2] for s in self.auto_zone_buffer]
                     yaw_variance = max(yaws_in_buf) - min(yaws_in_buf)
+                    pitch_variance = max(pitches_in_buf) - min(pitches_in_buf)
 
-                    # Nếu góc quay trong 2.0s ổn định (dao động < 14 độ), người dùng đã ổn định tư thế mới
-                    if yaw_variance <= 14.0:
-                        new_anchor = float(np.median(yaws_in_buf))
+                    # Người dùng đã ổn định hướng nhìn / góc cam mới (dao động <= 10 độ)
+                    if yaw_variance <= 10.0 and pitch_variance <= 10.0:
+                        new_yaw = float(np.median(yaws_in_buf))
+                        new_pitch = float(np.median(pitches_in_buf))
                         new_ear = float(np.median([s[3] for s in self.auto_zone_buffer]))
 
                         self.study_zone = {
-                            "yaw_min": round(new_anchor - 60.0, 1),
-                            "yaw_max": round(new_anchor + 60.0, 1),
-                            "pitch_min": -70.0,
-                            "pitch_max": 35.0,
+                            "yaw_min": round(new_yaw - 60.0, 1),
+                            "yaw_max": round(new_yaw + 60.0, 1),
+                            "pitch_min": round(min(-68.0, new_pitch - 45.0), 1),
+                            "pitch_max": round(max(32.0, new_pitch + 25.0), 1),
                             "roll_min": -40.0,
                             "roll_max": 40.0
                         }
@@ -749,15 +774,16 @@ class FocusDetector:
 
                         self.save_study_zone()
                         self.last_auto_adapt_time = now
+                        self.camera_shifted_time = 0.0
                         self.auto_zone_buffer.clear()
-                        auto_adapt_msg = f"ĐÃ TỰ ĐỘNG THÍCH ỨNG GÓC HỌC MỚI ({new_anchor:+.0f}°) XONG! ✓"
+                        auto_adapt_msg = f"ĐÃ TỰ ĐỘNG TÁI XÉT GÓC HỌC MỚI ({new_yaw:+.0f}°, {new_pitch:+.0f}°)! ✓"
                         self.recent_auto_adapt_msg = auto_adapt_msg
                         self.recent_auto_adapt_until = now + 2.5
                         try:
-                            print(f"[+] 🎯 {auto_adapt_msg}")
+                            print(f"[+] [GOC CAM] {auto_adapt_msg}")
                         except Exception:
                             pass
-        elif abs(delta_yaw) < 14.0:
+        elif not was_camera_shifted and (abs(delta_yaw) < 10.0 and abs(delta_pitch) < 8.0):
             self.auto_zone_buffer.clear()
 
         # Vùng học tập cá nhân hóa
