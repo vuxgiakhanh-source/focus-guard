@@ -88,7 +88,10 @@ class FocusDetector:
         self.ear_threshold = ear_threshold
         self.drowsy_limit_sec = drowsy_limit_sec
         self.distracted_limit_sec = distracted_limit_sec
-        self.away_limit_sec = away_limit_sec
+        self.away_limit_sec = 10.0           # Rời bàn quá 10s mới nhắc (cho phép vươn vai/nhặt bút)
+        self.writing_grace_sec = 40.0        # Ân hạn 40s khi cúi đầu viết bài mà không bao giờ bị báo rời bàn
+        self.last_seen_pitch = 0.0
+        self.last_seen_reading = False
 
         # Bộ lọc làm mịn 1-Euro Filter cho từng đại lượng
         self.smooth_pitch = OneEuroFilter(min_cutoff=0.8, beta=0.015)
@@ -494,7 +497,36 @@ class FocusDetector:
                 self.away_start = now
             away_dur = now - self.away_start
 
-            should_alert = away_dur > self.away_limit_sec
+            # ĐẶC QUYỀN CÚI VIẾT BÀI: Kiểm tra trước khi khuất mặt người dùng có đang cúi đầu viết bài không?
+            was_bowed_writing = (self.last_seen_pitch < -16.0 or self.last_seen_reading)
+            if was_bowed_writing and away_dur <= self.writing_grace_sec:
+                # Người học đang cúi thấp đầu viết bài trong vở (camera tạm không bắt được mặt vì đỉnh đầu hướng vào cam)
+                self._update_energy("FOCUSED", now)
+                return {
+                    "status": "FOCUSED",
+                    "label": "● ĐANG CÚI VIẾT BÀI",
+                    "reason": f"Tập trung cúi ghi chép bài vở ({away_dur:.0f}s)",
+                    "alert": False,
+                    "alert_type": None,
+                    "ear": 0.22,
+                    "mar": 0.0,
+                    "pitch": self.last_seen_pitch,
+                    "yaw": 0.0,
+                    "roll": 0.0,
+                    "gaze_ratio": 0.5,
+                    "perclos": 0.0,
+                    "is_reading_desk": True,
+                    "ear_threshold": self.ear_threshold,
+                    "study_zone": self.study_zone,
+                    "is_recording_zone": self.is_recording_zone,
+                    "record_time_left": 0.0,
+                    "is_study_zone_set": self.is_study_zone_set,
+                    "focus_score": self.get_focus_score(),
+                    "landmarks": None
+                }
+
+            limit_sec = self.writing_grace_sec if was_bowed_writing else self.away_limit_sec
+            should_alert = away_dur > limit_sec
             self._update_energy("AWAY" if should_alert else "WARNING", now)
             return {
                 "status": "AWAY",
@@ -570,22 +602,28 @@ class FocusDetector:
             }
 
         # 6. NHẬN DIỆN TƯ THẾ HỌC ĐỌC SÁCH / GHI CHÉP VỞ (DESK READING MODE)
-        # Khi cúi đầu nhìn xuống sách/vở trên bàn: pitch âm sâu, yaw ổn định
-        is_reading_desk = (-38.0 <= pitch <= -8.0) and (abs(yaw) <= 35.0) and not has_phone
+        # Khi cúi đầu nhìn xuống sách/vở trên bàn: pitch âm từ -8° tới -70°, góc quay yaw lên tới 55°
+        self.last_seen_pitch = pitch
+        is_reading_desk = (-70.0 <= pitch <= -8.0) and (abs(yaw) <= 55.0) and not has_phone
+        self.last_seen_reading = is_reading_desk
 
         # Vùng học tập cá nhân hóa
         yaw_min = self.study_zone.get("yaw_min", -60.0)
         yaw_max = self.study_zone.get("yaw_max", 60.0)
         is_turned_left = (yaw < yaw_min)
         is_turned_right = (yaw > yaw_max)
-        is_turned_away = is_turned_left or is_turned_right
+        if is_reading_desk:
+            # Khi đang cúi đọc sách hoặc viết bài ở hai bên bàn, cho phép góc quay tự do tới 60°
+            is_turned_away = (abs(yaw) > 60.0)
+        else:
+            is_turned_away = is_turned_left or is_turned_right
         is_inside_study_zone = not is_turned_away
 
         # Gaze tracking: Chỉ cảnh báo khi ngồi thẳng nhìn ngước lên mà liếc mắt mạnh sang hai bên
         is_gaze_diverted = (not is_reading_desk) and (gaze_ratio > 0.88 or gaze_ratio < 0.12) and abs(yaw) < 20.0
 
-        # Thích ứng góc cúi đầu đọc sách: mí mắt tự nhiên cụp xuống, hạ ngưỡng EAR xuống 65%
-        effective_ear_thresh = (self.ear_threshold * 0.65) if is_reading_desk else self.ear_threshold
+        # Thích ứng góc cúi đầu đọc sách/viết bài: mí mắt tự nhiên cụp xuống, hạ ngưỡng EAR xuống 52%
+        effective_ear_thresh = (self.ear_threshold * 0.52) if is_reading_desk else self.ear_threshold
         is_eyes_closed = (avg_ear < effective_ear_thresh)
         is_yawning = (mar > 0.70)
 
@@ -643,14 +681,15 @@ class FocusDetector:
                 self.phone_detected_start = None
 
         # Ưu tiên 2: BUỒN NGỦ / GỤC XUỐNG BÀN / PERCLOS / MICRO-SLEEP
-        micro_sleep_limit = 3.5 if is_reading_desk else self.drowsy_limit_sec
-        is_head_drooped = (pitch < -42.0)  # Đầu gục sát mặt bàn
+        micro_sleep_limit = 4.5 if is_reading_desk else self.drowsy_limit_sec
+        # CHỈ COI LÀ GỤC XUỐNG BÀN KHI TRÁN ÚP HOÀN TOÀN XUỐNG MẶT BÀN (pitch < -72°) VÀ MẮT NHẮM NGHIỀN
+        is_head_drooped = (pitch < -72.0) and is_eyes_closed
 
         if status == "FOCUSED":
             if is_head_drooped:
                 status = "DROWSY"
                 label = "GỤC XUỐNG BÀN"
-                reason = "Đầu gục quá thấp xuống bàn!"
+                reason = "Đầu úp sát mặt bàn và nhắm nghiền mắt!"
                 should_alert = True
                 alert_type = "DROWSY"
             elif is_eyes_closed:
@@ -724,9 +763,9 @@ class FocusDetector:
             alert_type = "YAWN"
 
         # Ưu tiên 6: KHOẢNG CÁCH MẮT - MÀN HÌNH (ERGONOMICS SCREEN DISTANCE)
-        # Khoảng cách giữa 2 khóe mắt ngoài (mốc 33 và 263)
+        # Chỉ kiểm tra khi ngồi thẳng nhìn màn hình (không cảnh báo khi cúi đầu làm bài trên bàn)
         eye_dist_px = math.hypot((landmarks[33].x - landmarks[263].x) * w, (landmarks[33].y - landmarks[263].y) * h)
-        if eye_dist_px > 125.0:
+        if (not is_reading_desk) and eye_dist_px > 135.0:
             if self.too_close_start is None:
                 self.too_close_start = now
             if (now - self.too_close_start) > 3.5:
