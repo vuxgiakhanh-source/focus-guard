@@ -14,33 +14,28 @@ class AppDistractionMonitor:
     - Mở tab để đó nghe nhạc hoặc không đụng vào -> HOÀN TOÀN KHÔNG BÁO ĐỘNG.
     - Ngay khi người dùng đóng tab / chuyển sang ứng dụng khác -> HỦY CẢNH BÁO TỨC THÌ (Zero Delay)!
     - Giờ giải lao Pomodoro -> Cho phép giải trí tự do 100%.
-    - Chạy native bằng Windows User32 API (tốn 0.0003ms, 0% CPU).
+    - Đọc tên cửa sổ bằng Windows User32 API; phần tải CPU chính đến từ các mô hình nhận diện.
     """
     def __init__(self, active_operate_thresh_sec=6.0, idle_timeout_sec=2.0, debounce_sec=6.0, **kwargs):
         self.active_operate_thresh_sec = debounce_sec if debounce_sec != 6.0 else active_operate_thresh_sec
         self.idle_timeout_sec = idle_timeout_sec
 
         self.active_operate_time = 0.0
-        self.last_check_time = time.time()
+        self.last_check_time = time.monotonic()
         self.current_distraction = None
 
         self.user32 = ctypes.windll.user32
         self.kernel32 = ctypes.windll.kernel32
-        self._attached = False
-        self._ensure_desktop_access()
-
-    def _ensure_desktop_access(self):
-        """Đảm bảo thread có quyền đọc tiêu đề cửa sổ trên Desktop người dùng"""
-        try:
-            h_winsta = self.user32.OpenWindowStationW('WinSta0', False, 0x037F)
-            if h_winsta:
-                self.user32.SetProcessWindowStation(h_winsta)
-                h_desk = self.user32.OpenDesktopW('Default', 0, False, 0x01FF)
-                if h_desk:
-                    self.user32.SetThreadDesktop(h_desk)
-                    self._attached = True
-        except Exception:
-            pass
+        self.user32.GetForegroundWindow.argtypes = []
+        self.user32.GetForegroundWindow.restype = ctypes.c_void_p
+        self.user32.GetWindowTextLengthW.argtypes = [ctypes.c_void_p]
+        self.user32.GetWindowTextLengthW.restype = ctypes.c_int
+        self.user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar), ctypes.c_int]
+        self.user32.GetWindowTextW.restype = ctypes.c_int
+        self.user32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
+        self.user32.GetLastInputInfo.restype = ctypes.c_bool
+        self.kernel32.GetTickCount.argtypes = []
+        self.kernel32.GetTickCount.restype = ctypes.c_uint32
 
     def get_system_idle_seconds(self):
         """Số giây kể từ lần người dùng chạm chuột / gõ phím cuối cùng trên máy tính"""
@@ -56,31 +51,27 @@ class AppDistractionMonitor:
         return 999.0
 
     def get_foreground_title(self):
-        """Lấy tiêu đề cửa sổ đang nằm trên cùng màn hình (Active Window Title)"""
+        """Lấy tiêu đề cửa sổ trước mặt bằng HWND đúng độ rộng trên Windows 64-bit."""
         try:
             hwnd = self.user32.GetForegroundWindow()
-            if not hwnd:
-                if not self._attached:
-                    self._ensure_desktop_access()
-                    hwnd = self.user32.GetForegroundWindow()
             if not hwnd:
                 return ""
 
             length = self.user32.GetWindowTextLengthW(hwnd)
-            if length > 0:
-                buff = ctypes.create_unicode_buffer(length + 1)
-                self.user32.GetWindowTextW(hwnd, buff, length + 1)
-                return buff.value.strip()
+            if length <= 0:
+                return ""
+            buff = ctypes.create_unicode_buffer(length + 1)
+            self.user32.GetWindowTextW(hwnd, buff, length + 1)
+            return buff.value.strip()
         except Exception:
-            pass
-        return ""
+            return ""
 
     def check_distraction(self, is_pomodoro_break=False):
         """
         Kiểm tra người dùng có đang THỰC SỰ THAO TÁC trên Facebook hay YouTube không.
         Kiểm tra thời gian thực từng khung hình (không lưu đệm cũ gây báo sai sau khi tắt).
         """
-        now = time.time()
+        now = time.monotonic()
         dt = max(0.0, min(1.0, now - self.last_check_time))
         self.last_check_time = now
 

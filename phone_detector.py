@@ -57,7 +57,8 @@ class PhoneTrack:
             elif not has_hand:
                 # Không có bàn tay chạm vào -> Tuyệt đối là vật thể tĩnh trên bàn / kệ
                 self.is_held = False
-            elif (now - self.first_seen >= 1.0) and disp < 14.0 and vel < 9.0:
+            elif not self.is_held and (now - self.first_seen >= 1.0) and disp < 14.0 and vel < 9.0:
+                # Chưa từng được cầm lên và hoàn toàn bất động -> vật thể tĩnh
                 self.is_held = False
         else:
             self.is_held = False
@@ -108,12 +109,12 @@ class KinematicPhoneTracker:
 
 
 class PhoneDetector:
-    def __init__(self, model_name="yolov8n.pt", conf_thresh=0.40, inference_interval_sec=0.75):
+    def __init__(self, model_name="yolov8n.pt", conf_thresh=0.40, inference_interval_sec=1.0):
         """
         Bộ phát hiện điện thoại trên tay người dùng sử dụng YOLOv8 Nano SIÊU TỐI ƯU HÓA:
         - torch.inference_mode(): Loại bỏ 100% overhead autograd của PyTorch
         - Model Warmup: Pre-warm mô hình ngay khi nạp, triệt tiêu giật lag ở khung hình đầu tiên
-        - Quét tối đa khoảng 1.3 FPS; CPU thực tế còn tùy model và cấu hình máy
+        - Quét tối đa khoảng 1 FPS; CPU thực tế còn tùy model và cấu hình máy
         - Kinematic Tracker + Hand Contact: Phân biệt chính xác điện thoại CẦM TRÊN TAY vs ĐẶT TĨNH TRÊN BÀN / KỆ
         - Anti-Hallucination Filters: Loại bỏ hoàn toàn sách vở, lót chuột, post-it, điều khiển, vật chữ nhật
         - Grace Persistence (0.6s): Giữ hộp nhận diện ổn định, chống chớp tắt khi tay chuyển động
@@ -132,12 +133,15 @@ class PhoneDetector:
         self.pending_frame = None
         self.frame_event = threading.Event()
         self.last_infer_time = 0.0
+        self.last_error_log_time = 0.0
         self.tracker = KinematicPhoneTracker()
 
         threading.Thread(target=self._load_model, args=(model_name,), daemon=True).start()
 
     def _load_model(self, model_name):
         try:
+            if not self.is_running:
+                return
             import torch
             import ultralytics.utils.torch_utils as tu
             tu.NUM_THREADS = 1
@@ -149,15 +153,21 @@ class PhoneDetector:
             torch.set_grad_enabled(False)
 
             from ultralytics import YOLO
+            if not self.is_running:
+                return
             self.model = YOLO(model_name)
+            if not self.is_running:
+                return
 
             # Khởi động trước (Warmup) mô hình để nạp trọng số vào CPU L2/L3 cache
             with torch.inference_mode():
                 dummy = np.zeros((256, 256, 3), dtype=np.uint8)
                 self.model.predict(dummy, classes=[67], conf=0.5, verbose=False, imgsz=256)
 
+            if not self.is_running:
+                return
             self.is_ready = True
-            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (imgsz=256, tối đa khoảng 1.3 FPS).")
+            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (imgsz=256, tối đa khoảng 1 FPS).")
             threading.Thread(target=self._inference_loop, daemon=True).start()
         except Exception as e:
             print(f"[-] Không thể nạp YOLOv8: {e}")
@@ -306,8 +316,10 @@ class PhoneDetector:
                         else:
                             if now - self.last_detected_time > self.detection_ttl_sec:
                                 self.latest_boxes = []
-                except Exception:
-                    pass
+                except Exception as e:
+                    if now - self.last_error_log_time >= 30.0:
+                        print(f"[-] Lỗi suy luận YOLO: {e}")
+                        self.last_error_log_time = now
 
     def get_detected_phones(self):
         """Trả về danh sách các điện thoại nhận diện được dạng (x1, y1, x2, y2, conf, is_held)"""

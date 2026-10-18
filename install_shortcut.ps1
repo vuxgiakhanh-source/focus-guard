@@ -1,10 +1,18 @@
-# FocusGuard PRO - Re-create Desktop Shortcut
+﻿# FocusGuard PRO - Re-create Desktop Shortcut
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PythonPath = "C:\Users\LOQ\AppData\Local\Programs\Python\Python312\pythonw.exe"
+$PythonPath = Join-Path $ScriptDir "venv\Scripts\pythonw.exe"
+if (-not (Test-Path $PythonPath)) {
+    $PythonPath = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\pythonw.exe"
+}
+if (-not (Test-Path $PythonPath)) {
+    $PythonCommand = Get-Command pythonw.exe -ErrorAction SilentlyContinue
+    if ($PythonCommand) { $PythonPath = $PythonCommand.Source }
+    else { throw "Không tìm thấy pythonw.exe; hãy cài Python hoặc tạo venv trong thư mục dự án." }
+}
 $IconPath = Join-Path $ScriptDir "app_icon.ico"
 $MainPy = Join-Path $ScriptDir "main.py"
 
-$DesktopPaths = @([Environment]::GetFolderPath("Desktop"), "C:\Users\LOQ\Desktop") | Select-Object -Unique
+$DesktopPaths = @([Environment]::GetFolderPath("Desktop")) | Select-Object -Unique
 
 foreach ($Desktop in $DesktopPaths) {
     if (Test-Path $Desktop) {

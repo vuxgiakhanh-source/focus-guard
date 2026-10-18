@@ -24,7 +24,7 @@
 * 📱 **Phát hiện điện thoại trên tay bằng AI Động Học (Kinematics):** Phân biệt chính xác giữa điện thoại để tĩnh trên bàn/kệ sạc (an toàn) và điện thoại đang cầm trên tay (cảnh báo).
 * 📖 **Chế độ Đọc Sách / Ghi Chép (Desk Reading Mode):** Tự động nhận diện tư thế cúi đầu làm bài, chống 100% tình trạng báo nhầm buồn ngủ khi mắt cụp xuống đọc vở.
 * 😴 **Tiêu chuẩn Buồn Ngủ NHTSA PERCLOS (P80) & Micro-sleep:** Không báo nhầm khi chớp mắt chậm; bắt dính ngay lập tức hiện tượng gà gật lờ đờ hoặc ngủ gục.
-* 📏 **Bảo Vệ Mắt & Cột Sống (Screen Distance & Posture):** Cảnh báo khi người học ngồi quá gần màn hình (<35cm) hoặc nghiêng cổ tì cằm quá lâu.
+* 📏 **Tư thế và độ lớn khuôn mặt trong khung hình:** Nhắc kiểm tra tư thế khi mặt chiếm nhiều khung; đây là ước lượng phụ thuộc góc nhìn và camera, không đo khoảng cách theo centimet.
 * 🌐 **Lọc Xao Nhãng Ứng Dụng Thông Minh:** Phát hiện Facebook, TikTok, Game (Liên Minh, Valorant, Genshin, Roblox...), cho phép xem bài giảng học tập trên YouTube và nghe nhạc Lofi.
 * 🔋 **Bình Năng Lượng Tập Trung Động (Attentional Reservoir):** Điểm số 0-100% phản hồi thời gian thực, hồi phục khi chăm chỉ và rút bớt khi xao nhãng.
 * 🔥 **Theo Dõi Chuỗi Ngày Học (Daily Streak & Mục Tiêu Ngày):** Gamify hóa quá trình tự học với bảng vàng thành tích xem trực tiếp bằng phím `H`.
@@ -51,7 +51,7 @@
    * Tính toán tỷ lệ mắt nhắm trong cửa sổ trượt 12 giây kết hợp bộ đếm vi giấc ngủ (Micro-sleep > 2.6s). Người đeo kính gọng dày hay mắt híp đều được cân chỉnh riêng biệt.
 
 5. **👀 Cảnh Báo Khoảng Cách Mắt & Tư Thế Cổ (Screen Distance):**
-   * Tự động đo khoảng cách giữa 2 mắt đến camera. Ngồi quá sát màn hình (<35cm) sẽ có thông báo nhắc lùi xa $\ge 50\text{cm}$ để chống cận thị và gù lưng.
+   * Dùng kích thước tương đối giữa hai mắt trong ảnh để nhắc tư thế. Ngưỡng phụ thuộc webcam, độ phân giải, góc đặt camera và khuôn mặt; không quy đổi thành số centimet.
 
 6. **⏱ Pomodoro Chuẩn Quốc Tế Có Nghỉ Dài (25p học / 5p nghỉ / 15p nghỉ sâu):**
    * Cứ sau mỗi 4 chu kỳ học tập trung liên tiếp, hệ thống tự động thưởng phiên **Nghỉ Dài 15 phút** để não bộ tái tạo năng lượng.
@@ -71,7 +71,7 @@
 11. **🍃 Chế độ giảm tải CPU:**
     * Giới hạn một số luồng BLAS, OpenCV và PyTorch; MediaPipe Tasks không có thiết lập Python để khóa tổng CPU của ứng dụng.
     * Giới hạn nhịp xử lý camera ở 6 FPS, giảm còn 3 FPS trong giờ nghỉ Pomodoro.
-    * MediaPipe suy luận khoảng 2 lần/giây; YOLO quét điện thoại tối đa khoảng 1.3 lần/giây. Mức CPU thực tế phụ thuộc CPU, webcam và thời gian suy luận; không có mức phần trăm cố định.
+    * MediaPipe suy luận khoảng 1.5 lần/giây; YOLO quét điện thoại tối đa khoảng 1 lần/giây. Tần suất suy luận giảm khoảng 25% so với trước, đổi lại cảnh báo có thể chậm thêm tối đa khoảng 0.5–1 giây.
 
 ---
 

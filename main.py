@@ -52,55 +52,93 @@ BREAK_TARGET_FPS = 3
 _instance_mutex = None
 
 def enforce_single_instance(force_restart=False):
-    """
-    Đảm bảo chỉ có duy nhất 1 phiên bản FocusGuard PRO hoạt động cùng lúc.
-    Tự động quét và diệt sạch các tiến trình ngầm (zombie) mồ côi từ các phiên trước
-    bị kẹt, giải phóng 100% CPU và giải phóng Webcam trước khi khởi tạo phiên mới.
-    """
+    """Giữ một phiên FocusGuard; nhận diện tiến trình theo đúng đường dẫn main.py."""
     global _instance_mutex
-    import psutil
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+
     ERROR_ALREADY_EXISTS = 183
     mutex_name = "FocusGuard_PRO_SingleInstance_Mutex_v2"
     my_pid = os.getpid()
+    target_script = os.path.normcase(os.path.abspath(__file__))
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
 
-    # 1. Quét tìm các tiến trình python/pythonw khác đang chạy main.py của FocusGuard
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        try:
-            if proc.info['pid'] == my_pid:
-                continue
-            name = (proc.info['name'] or '').lower()
-            if 'python' in name:
-                cmdline = proc.info.get('cmdline') or []
-                cmdline_str = " ".join(cmdline).lower()
-                if "main.py" in cmdline_str and ("focus-guard" in cmdline_str or os.path.basename(__file__).lower() in cmdline_str):
-                    user32 = ctypes.windll.user32
-                    hwnd = user32.FindWindowW(None, WIN_TITLE)
-                    # Nếu tiến trình cũ không có cửa sổ hiển thị (zombie ngầm) hoặc người dùng yêu cầu ép chạy lại
-                    if not hwnd or force_restart:
-                        print(f"[*] Đang dọn dẹp tiến trình FocusGuard chạy ngầm cũ (PID: {proc.info['pid']})...")
+    # Dùng kiểu con trỏ đúng trên Windows 64-bit để HWND/HANDLE không bị cắt cụt.
+    user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.FindWindowW.restype = ctypes.c_void_p
+    user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+    user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+    user32.PostMessageW.restype = ctypes.c_bool
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.GetLastError.restype = ctypes.c_ulong
+
+    if psutil is not None:
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                info = proc.info
+                if info['pid'] == my_pid or 'python' not in (info['name'] or '').lower():
+                    continue
+
+                cmdline = info.get('cmdline') or []
+                process_cwd = None
+                is_target = False
+                for arg in cmdline:
+                    candidate = arg.strip('"')
+                    if not candidate.lower().endswith('.py'):
+                        continue
+                    if not os.path.isabs(candidate):
+                        if process_cwd is None:
+                            process_cwd = proc.cwd()
+                        candidate = os.path.join(process_cwd, candidate)
+                    if os.path.normcase(os.path.abspath(candidate)) == target_script:
+                        is_target = True
+                        break
+                if not is_target:
+                    continue
+
+                hwnd = user32.FindWindowW(None, WIN_TITLE)
+                if hwnd and not force_restart:
+                    user32.ShowWindow(hwnd, 9)
+                    user32.SetForegroundWindow(hwnd)
+                    print(f"[*] FocusGuard đang hoạt động (PID: {info['pid']}). Đã đưa cửa sổ lên trước.")
+                    sys.exit(0)
+
+                if hwnd and force_restart:
+                    # Cho phiên hiện tại thoát qua luồng bình thường để lưu lịch sử trước.
+                    user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+                    try:
+                        proc.wait(timeout=5)
+                    except psutil.TimeoutExpired:
+                        print(f"[!] FocusGuard chưa thoát sau 5 giây; kết thúc PID {info['pid']}.")
                         proc.kill()
                         proc.wait(timeout=2)
-                        time.sleep(0.2)
-                    else:
-                        # Đã có cửa sổ đang mở bình thường trên màn hình -> đưa lên trước
-                        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-                        user32.SetForegroundWindow(hwnd)
-                        print(f"[*] FocusGuard đang hoạt động (PID: {proc.info['pid']}). Đã đưa cửa sổ lên phía trước.")
-                        sys.exit(0)
-        except Exception:
-            pass
+                else:
+                    print(f"[*] Đang dọn tiến trình FocusGuard không có cửa sổ (PID: {info['pid']})...")
+                    proc.kill()
+                    proc.wait(timeout=2)
+                time.sleep(0.2)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                continue
+            except Exception:
+                continue
 
-    # 2. Tạo Mutex kiểm soát đơn phiên
+    # Mutex giải quyết trường hợp hai launcher chạy đồng thời trước khi có cửa sổ.
     try:
-        _instance_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
-        last_error = ctypes.windll.kernel32.GetLastError()
+        _instance_mutex = kernel32.CreateMutexW(None, False, mutex_name)
+        last_error = kernel32.GetLastError()
         if last_error == ERROR_ALREADY_EXISTS:
-            user32 = ctypes.windll.user32
             hwnd = user32.FindWindowW(None, WIN_TITLE)
             if hwnd:
                 user32.ShowWindow(hwnd, 9)
                 user32.SetForegroundWindow(hwnd)
-                sys.exit(0)
+            # Một tiến trình đã giữ mutex, dù cửa sổ của nó chưa dựng xong.
+            sys.exit(0)
     except Exception:
         pass
 
@@ -136,7 +174,6 @@ def run_focus_guard():
         print(f"[-] Lỗi khởi tạo mô hình FaceMesh: {e}")
         return
 
-    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.40)
     alert_mgr = SoundAlertManager()
     hud = HUDRenderer()
     pomodoro = PomodoroTimer(work_min=25, break_min=5)
@@ -166,8 +203,10 @@ def run_focus_guard():
             )
         except Exception:
             pass
-        phone_detector.stop()
         return
+
+    # Chỉ nạp YOLO sau khi mở được camera để tránh dùng CPU vô ích khi không có camera.
+    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.40)
 
     # Cài đặt độ phân giải chuẩn 640x480 và triệt tiêu độ trễ bộ đệm (Zero Buffer Delay)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -220,263 +259,277 @@ def run_focus_guard():
 
 
     failed_frames_count = 0
-    while True:
-        loop_start = time.perf_counter()
-        ret, frame = cap.read()
-        if not ret:
-            failed_frames_count += 1
-            if failed_frames_count > 10:
-                print("[-] Không đọc được frame từ webcam (mất tín hiệu camera).")
+    try:
+        while True:
+            loop_start = time.perf_counter()
+            ret, frame = cap.read()
+            if not ret:
+                failed_frames_count += 1
+                if failed_frames_count > 10:
+                    print("[-] Không đọc được frame từ webcam (mất tín hiệu camera).")
+                    break
+                time.sleep(0.03)
+                continue
+            failed_frames_count = 0
+    
+            # Đảm bảo độ phân giải luôn chuẩn xác 640x480 trên mọi loại webcam (tránh giật lag do webcam 1080p/4K)
+            if frame.shape[1] != 640 or frame.shape[0] != 480:
+                frame = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_LINEAR)
+    
+            cv2.flip(frame, 1, dst=frame)
+    
+            # 1. Cập nhật đồng hồ Pomodoro (hỗ trợ Nghỉ Dài sau 4 hiệp)
+            pomo_state, pomo_time_left, pomo_event = pomodoro.update()
+            if pomo_event == "LONG_BREAK_START":
+                alert_mgr.play_voice("BREAK_START", force=True)
+                print("[*] POMODORO: 4 chu kỳ học hoàn thành! Bắt đầu NGHỈ DÀI 15 PHÚT!")
+            elif pomo_event == "BREAK_START":
+                alert_mgr.play_voice("BREAK_START", force=True)
+                print("[*] POMODORO: Hết 25 phút học! Nghỉ giải lao 5 phút thoải mái!")
+            elif pomo_event == "BREAK_END":
+                alert_mgr.play_voice("BREAK_END", force=True)
+                print("[*] POMODORO: Hết giờ nghỉ! Bắt đầu buổi học tiếp theo!")
+    
+            is_break = (pomo_state == "BREAK")
+            frame_interval = 1.0 / (BREAK_TARGET_FPS if is_break else TARGET_FPS)
+    
+            # 2. Quét điện thoại ngầm bằng YOLOv8 (Tự động ngủ 100% trong giờ giải lao để làm mát máy)
+            if not is_break:
+                phone_detector.update_frame(frame)
+                detected_phones = phone_detector.get_detected_phones()
+            else:
+                detected_phones = []
+    
+            # 3. Chạy AI phân tích (EMA, Gaze, HeadPose, Adaptive EAR)
+            result = detector.process_frame(frame, detected_phones=detected_phones, is_pomodoro_break=is_break)
+    
+            # 3.5 Giám sát thao tác trên Facebook / YouTube / Mạng xã hội trên máy tính
+            web_distract = app_monitor.check_distraction(is_pomodoro_break=is_break)
+            is_web_alerting = bool(web_distract and web_distract["should_alert"])
+    
+            # Nếu người dùng vừa tắt Facebook/YouTube -> Dừng cảnh báo giọng nói NGAY LẬP TỨC (Zero Lag)!
+            if last_web_alerting and not is_web_alerting:
+                alert_mgr.stop(min_play_sec=0, fade_ms=150)
+    
+            last_web_alerting = is_web_alerting
+    
+            if is_web_alerting:
+                detector.override_current_energy_status("DISTRACTED")
+                result["focus_score"] = detector.get_focus_score()
+                result["status"] = "DISTRACTED"
+                result["label"] = f"PHÁT HIỆN ĐANG DÙNG {web_distract['label'].upper()}!"
+                result["reason"] = f"Đang thao tác trên {web_distract['label']} ({web_distract['duration']:.1f}s)!"
+                result["alert"] = True
+                result["alert_type"] = web_distract["alert_type"]
+            elif web_distract and web_distract["is_distracted"]:
+                result["label"] = f"CHẠM VÀO {web_distract['label'].upper()}"
+                result["reason"] = f"Đang tương tác ({web_distract['duration']:.1f}s)..."
+    
+            focus_score_sum += float(result.get("focus_score", detector.get_focus_score()))
+            focus_score_samples += 1
+    
+            # Theo dõi chuyển trạng thái của quá trình xác định khung học
+            is_rec = result.get("is_recording_zone", False)
+            if last_recording_state and not is_rec:
+                calib_summary = result.get("calib_result_msg") or detector.last_calib_msg or "ĐÃ XÁC ĐỊNH XONG KHUNG HỌC TỰ NHIÊN! ✓"
+                alert_msg = calib_summary
+                alert_msg_time = time.time()
+            last_recording_state = is_rec
+    
+            # Theo dõi tự động thích ứng góc học tập mới (Autonomous Zone Adaptation)
+            auto_msg = result.get("auto_adapted_zone")
+            if auto_msg and alert_msg != auto_msg:
+                alert_msg = auto_msg
+                alert_msg_time = time.time()
+    
+            # 4. Vẽ hộp nhận diện điện thoại (Đỏ nếu đang CẦM TRÊN TAY, Lam nếu ĐẶT TĨNH TRÊN BÀN)
+            if detected_phones and not is_break:
+                for item in detected_phones:
+                    if len(item) == 6:
+                        x1, y1, x2, y2, conf, is_held = item
+                    else:
+                        x1, y1, x2, y2, conf = item
+                        is_held = True
+    
+                    if is_held:
+                        # Điện thoại đang cầm trên tay: Hộp đỏ cảnh báo
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                        top_y = max(0, y1 - 28)
+                        cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 205), y1), (0, 0, 255), -1)
+                        cv2.putText(frame, f"DIEN THOAI TREN TAY {int(conf*100)}%", (x1 + 6, max(18, y1 - 8)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA)
+                    elif conf >= 0.52:
+                        # Điện thoại đặt trên bàn / kệ: Chỉ hiển thị nếu độ tin cậy >= 52% (chống vẽ nhầm lên sách vở)
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (210, 180, 0), 2)
+                        top_y = max(0, y1 - 24)
+                        cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 195), y1), (180, 130, 20), -1)
+                        cv2.putText(frame, "DIEN THOAI (TREN BAN)", (x1 + 6, max(16, y1 - 7)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
+    
+            if result["alert"] and not is_break:
+                if not last_alert_state:
+                    alert_type = result.get("alert_type")
+                    if alert_type in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
+                        web_events += 1
+                    elif alert_type == "PHONE":
+                        phone_events += 1
+                    elif result["status"] == "DROWSY":
+                        drowsy_events += 1
+                    elif result["status"] in ["DISTRACTED", "AWAY"]:
+                        distraction_events += 1
+                    last_alert_state = True
+    
+                if not is_muted and result.get("alert_type"):
+                    # Giãn cách thông minh: Không bao giờ nói lặp đi lặp lại quấy rầy người học
+                    if result["alert_type"] == "AWAY":
+                        voice_cd = 60.0    # Rời bàn chỉ nhắc 1 lần, 60s sau mới nhắc lại nếu vẫn chưa về
+                    elif result["alert_type"] in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
+                        voice_cd = 20.0    # Mạng xã hội giãn cách 20s
+                    elif result["alert_type"] == "PHONE":
+                        voice_cd = 16.0    # Điện thoại giãn cách 16s
+                    elif result["alert_type"] == "DROWSY":
+                        voice_cd = 15.0    # Buồn ngủ giãn cách 15s
+                    else:
+                        voice_cd = 18.0    # Quay mặt đi giãn cách 18s (triệt tiêu nói lặp 3.5s)
+                    alert_mgr.play_voice(result["alert_type"], cooldown=voice_cd)
+            else:
+                # Ngay khi quay lại tập trung: Dừng âm thanh nếu đã phát xong câu cảnh báo (chống ngắt ngang ngắp ngứ)
+                if last_alert_state:
+                    alert_mgr.stop(min_play_sec=1.4, fade_ms=250)
+                last_alert_state = False
+    
+            # 6. Quản lý thông báo nổi
+            active_msg = ""
+            if time.time() - alert_msg_time < 2.5:
+                active_msg = alert_msg
+    
+            # 7. Vẽ giao diện HUD chuyên nghiệp
+            elapsed_sec = time.time() - start_time
+            pomodoro_info = (pomo_state, pomo_time_left) if pomodoro.is_active else None
+            frame = hud.draw_hud(
+                frame,
+                result,
+                elapsed_sec,
+                pomodoro_info=pomodoro_info,
+                is_muted=is_muted,
+                alert_msg=active_msg,
+                show_stats=show_stats,
+                stats_data=stats_data
+            )
+    
+            # 8. Hiển thị
+            cv2.imshow(WIN_TITLE, frame)
+    
+            # Giới hạn nhịp xử lý; thời gian suy luận AI vẫn phụ thuộc cấu hình máy.
+            loop_elapsed = time.perf_counter() - loop_start
+            remaining = frame_interval - loop_elapsed
+            wait_ms = max(1, int(remaining * 1000)) if remaining > 0 else 1
+            key = cv2.waitKey(wait_ms) & 0xFF
+    
+            # 9. Kiểm tra đóng cửa sổ (bấm nút X) - BẮT BUỘC kiểm tra sau cv2.waitKey()
+            try:
+                if cv2.getWindowProperty(WIN_TITLE, cv2.WND_PROP_VISIBLE) < 1:
+                    print("[*] Đóng cửa sổ ứng dụng (người dùng bấm nút X).")
+                    break
+            except Exception:
                 break
-            time.sleep(0.03)
-            continue
-        failed_frames_count = 0
-
-        # Đảm bảo độ phân giải luôn chuẩn xác 640x480 trên mọi loại webcam (tránh giật lag do webcam 1080p/4K)
-        if frame.shape[1] != 640 or frame.shape[0] != 480:
-            frame = cv2.resize(frame, (640, 480), interpolation=cv2.INTER_LINEAR)
-
-        cv2.flip(frame, 1, dst=frame)
-
-        # 1. Cập nhật đồng hồ Pomodoro (hỗ trợ Nghỉ Dài sau 4 hiệp)
-        pomo_state, pomo_time_left, pomo_event = pomodoro.update()
-        if pomo_event == "LONG_BREAK_START":
-            alert_mgr.play_voice("BREAK_START", force=True)
-            print("[*] POMODORO: 4 chu kỳ học hoàn thành! Bắt đầu NGHỈ DÀI 15 PHÚT!")
-        elif pomo_event == "BREAK_START":
-            alert_mgr.play_voice("BREAK_START", force=True)
-            print("[*] POMODORO: Hết 25 phút học! Nghỉ giải lao 5 phút thoải mái!")
-        elif pomo_event == "BREAK_END":
-            alert_mgr.play_voice("BREAK_END", force=True)
-            print("[*] POMODORO: Hết giờ nghỉ! Bắt đầu buổi học tiếp theo!")
-
-        is_break = (pomo_state == "BREAK")
-        frame_interval = 1.0 / (BREAK_TARGET_FPS if is_break else TARGET_FPS)
-
-        # 2. Quét điện thoại ngầm bằng YOLOv8 (Tự động ngủ 100% trong giờ giải lao để làm mát máy)
-        if not is_break:
-            phone_detector.update_frame(frame)
-            detected_phones = phone_detector.get_detected_phones()
-        else:
-            detected_phones = []
-
-        # 3. Chạy AI phân tích (EMA, Gaze, HeadPose, Adaptive EAR)
-        result = detector.process_frame(frame, detected_phones=detected_phones, is_pomodoro_break=is_break)
-
-        # 3.5 Giám sát thao tác trên Facebook / YouTube / Mạng xã hội trên máy tính
-        web_distract = app_monitor.check_distraction(is_pomodoro_break=is_break)
-        is_web_alerting = bool(web_distract and web_distract["should_alert"])
-
-        # Nếu người dùng vừa tắt Facebook/YouTube -> Dừng cảnh báo giọng nói NGAY LẬP TỨC (Zero Lag)!
-        if last_web_alerting and not is_web_alerting:
-            alert_mgr.stop(min_play_sec=0, fade_ms=150)
-
-        last_web_alerting = is_web_alerting
-
-        if is_web_alerting:
-            detector.override_current_energy_status("DISTRACTED")
-            result["focus_score"] = detector.get_focus_score()
-            result["status"] = "DISTRACTED"
-            result["label"] = f"PHÁT HIỆN ĐANG DÙNG {web_distract['label'].upper()}!"
-            result["reason"] = f"Đang thao tác trên {web_distract['label']} ({web_distract['duration']:.1f}s)!"
-            result["alert"] = True
-            result["alert_type"] = web_distract["alert_type"]
-        elif web_distract and web_distract["is_distracted"]:
-            result["label"] = f"CHẠM VÀO {web_distract['label'].upper()}"
-            result["reason"] = f"Đang tương tác ({web_distract['duration']:.1f}s)..."
-
-        focus_score_sum += float(result.get("focus_score", detector.get_focus_score()))
-        focus_score_samples += 1
-
-        # Theo dõi chuyển trạng thái của quá trình xác định khung học
-        is_rec = result.get("is_recording_zone", False)
-        if last_recording_state and not is_rec:
-            calib_summary = result.get("calib_result_msg") or detector.last_calib_msg or "ĐÃ XÁC ĐỊNH XONG KHUNG HỌC TỰ NHIÊN! ✓"
-            alert_msg = calib_summary
-            alert_msg_time = time.time()
-        last_recording_state = is_rec
-
-        # Theo dõi tự động thích ứng góc học tập mới (Autonomous Zone Adaptation)
-        auto_msg = result.get("auto_adapted_zone")
-        if auto_msg and alert_msg != auto_msg:
-            alert_msg = auto_msg
-            alert_msg_time = time.time()
-
-        # 4. Vẽ hộp nhận diện điện thoại (Đỏ nếu đang CẦM TRÊN TAY, Lam nếu ĐẶT TĨNH TRÊN BÀN)
-        if detected_phones and not is_break:
-            for item in detected_phones:
-                if len(item) == 6:
-                    x1, y1, x2, y2, conf, is_held = item
+    
+            # Xử lý hành động từ Click chuột hoặc Phím tắt bàn phím
+            action = None
+            if mouse_click_action:
+                action = mouse_click_action
+                mouse_click_action = None
+                if show_stats and action != "STATS":
+                    show_stats = False
+            elif key == ord('q') or key == ord('Q') or key == 27:
+                action = "QUIT"
+            elif key == ord('c') or key == ord('C'):
+                action = "CALIBRATE"
+            elif key == ord('p') or key == ord('P'):
+                action = "POMODORO"
+            elif key == ord('h') or key == ord('H'):
+                action = "STATS"
+            elif key == ord('r') or key == ord('R'):
+                action = "RESET"
+            elif key == ord('m') or key == ord('M'):
+                action = "MUTE"
+            elif key != 255 and show_stats:
+                # Nhấn bất kỳ phím nào khác để đóng bảng thống kê
+                show_stats = False
+    
+            if action == "QUIT":
+                break
+            elif action == "CALIBRATE":
+                if detector.is_recording_zone:
+                    msg = detector.finalize_zone_learning()
                 else:
-                    x1, y1, x2, y2, conf = item
-                    is_held = True
+                    msg = detector.start_zone_learning(duration=10.0)
+                alert_msg = msg
+                alert_msg_time = time.time()
+            elif action == "POMODORO":
+                state_active = pomodoro.toggle()
+                print(f"[*] Chế độ Pomodoro: {'BẬT' if state_active else 'TẮT'}")
+            elif action == "STATS":
+                show_stats = not show_stats
+                if show_stats:
+                    stats_data = history_mgr.get_summary_stats()
+                print(f"[*] Bảng thống kê học tập: {'MỞ' if show_stats else 'ĐÓNG'}")
+            elif action == "RESET":
+                detector.reset_focus_score()
+                hud.score_history = [100.0, 100.0]
+                start_time = time.time()
+                pomodoro.reset()
+                phone_events = web_events = distraction_events = drowsy_events = 0
+                last_alert_state = False
+                focus_score_sum = 0.0
+                focus_score_samples = 0
+                print("[*] Đã reset điểm, bộ đếm sự kiện, đồng hồ Pomodoro và phiên học.")
+            elif action == "MUTE":
+                is_muted = not is_muted
+                if is_muted:
+                    alert_mgr.stop(min_play_sec=0, fade_ms=100)
+                state_str = "TẮT" if is_muted else "BẬT"
+                print(f"[*] Âm thanh cảnh báo: {state_str}")
+    
+    finally:
+        try:
+            alert_mgr.stop(min_play_sec=0, fade_ms=100)
+        except Exception:
+            pass
+        try:
+            phone_detector.stop()
+        except Exception:
+            pass
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
+        try:
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
 
-                if is_held:
-                    # Điện thoại đang cầm trên tay: Hộp đỏ cảnh báo
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                    top_y = max(0, y1 - 28)
-                    cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 205), y1), (0, 0, 255), -1)
-                    cv2.putText(frame, f"DIEN THOAI TREN TAY {int(conf*100)}%", (x1 + 6, max(18, y1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA)
-                elif conf >= 0.52:
-                    # Điện thoại đặt trên bàn / kệ: Chỉ hiển thị nếu độ tin cậy >= 52% (chống vẽ nhầm lên sách vở)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (210, 180, 0), 2)
-                    top_y = max(0, y1 - 24)
-                    cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 195), y1), (180, 130, 20), -1)
-                    cv2.putText(frame, "DIEN THOAI (TREN BAN)", (x1 + 6, max(16, y1 - 7)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
-
-        if result["alert"] and not is_break:
-            if not last_alert_state:
-                alert_type = result.get("alert_type")
-                if alert_type in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
-                    web_events += 1
-                elif alert_type == "PHONE":
-                    phone_events += 1
-                elif result["status"] == "DROWSY":
-                    drowsy_events += 1
-                elif result["status"] in ["DISTRACTED", "AWAY"]:
-                    distraction_events += 1
-                last_alert_state = True
-
-            if not is_muted and result.get("alert_type"):
-                # Giãn cách thông minh: Không bao giờ nói lặp đi lặp lại quấy rầy người học
-                if result["alert_type"] == "AWAY":
-                    voice_cd = 60.0    # Rời bàn chỉ nhắc 1 lần, 60s sau mới nhắc lại nếu vẫn chưa về
-                elif result["alert_type"] in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
-                    voice_cd = 20.0    # Mạng xã hội giãn cách 20s
-                elif result["alert_type"] == "PHONE":
-                    voice_cd = 16.0    # Điện thoại giãn cách 16s
-                elif result["alert_type"] == "DROWSY":
-                    voice_cd = 15.0    # Buồn ngủ giãn cách 15s
-                else:
-                    voice_cd = 18.0    # Quay mặt đi giãn cách 18s (triệt tiêu nói lặp 3.5s)
-                alert_mgr.play_voice(result["alert_type"], cooldown=voice_cd)
-        else:
-            # Ngay khi quay lại tập trung: Dừng âm thanh nếu đã phát xong câu cảnh báo (chống ngắt ngang ngắp ngứ)
-            if last_alert_state:
-                alert_mgr.stop(min_play_sec=1.4, fade_ms=250)
-            last_alert_state = False
-
-        # 6. Quản lý thông báo nổi
-        active_msg = ""
-        if time.time() - alert_msg_time < 2.5:
-            active_msg = alert_msg
-
-        # 7. Vẽ giao diện HUD chuyên nghiệp
-        elapsed_sec = time.time() - start_time
-        pomodoro_info = (pomo_state, pomo_time_left) if pomodoro.is_active else None
-        frame = hud.draw_hud(
-            frame,
-            result,
-            elapsed_sec,
-            pomodoro_info=pomodoro_info,
-            is_muted=is_muted,
-            alert_msg=active_msg,
-            show_stats=show_stats,
-            stats_data=stats_data
+        session_score = (
+            focus_score_sum / focus_score_samples
+            if focus_score_samples else detector.get_focus_score()
         )
 
-        # 8. Hiển thị
-        cv2.imshow(WIN_TITLE, frame)
-
-        # Giới hạn nhịp xử lý; thời gian suy luận AI vẫn phụ thuộc cấu hình máy.
-        loop_elapsed = time.perf_counter() - loop_start
-        remaining = frame_interval - loop_elapsed
-        wait_ms = max(1, int(remaining * 1000)) if remaining > 0 else 1
-        key = cv2.waitKey(wait_ms) & 0xFF
-
-        # 9. Kiểm tra đóng cửa sổ (bấm nút X) - BẮT BUỘC kiểm tra sau cv2.waitKey()
+        # 10. Tự động lưu phiên học vào focus_history.json và in báo cáo chi tiết
         try:
-            if cv2.getWindowProperty(WIN_TITLE, cv2.WND_PROP_VISIBLE) < 1:
-                print("[*] Đóng cửa sổ ứng dụng (người dùng bấm nút X).")
-                break
-        except Exception:
-            break
-
-        # Xử lý hành động từ Click chuột hoặc Phím tắt bàn phím
-        action = None
-        if mouse_click_action:
-            action = mouse_click_action
-            mouse_click_action = None
-            if show_stats and action != "STATS":
-                show_stats = False
-        elif key == ord('q') or key == ord('Q') or key == 27:
-            action = "QUIT"
-        elif key == ord('c') or key == ord('C'):
-            action = "CALIBRATE"
-        elif key == ord('p') or key == ord('P'):
-            action = "POMODORO"
-        elif key == ord('h') or key == ord('H'):
-            action = "STATS"
-        elif key == ord('r') or key == ord('R'):
-            action = "RESET"
-        elif key == ord('m') or key == ord('M'):
-            action = "MUTE"
-        elif key != 255 and show_stats:
-            # Nhấn bất kỳ phím nào khác để đóng bảng thống kê
-            show_stats = False
-
-        if action == "QUIT":
-            break
-        elif action == "CALIBRATE":
-            if detector.is_recording_zone:
-                msg = detector.finalize_zone_learning()
-            else:
-                msg = detector.start_zone_learning(duration=10.0)
-            alert_msg = msg
-            alert_msg_time = time.time()
-        elif action == "POMODORO":
-            state_active = pomodoro.toggle()
-            print(f"[*] Chế độ Pomodoro: {'BẬT' if state_active else 'TẮT'}")
-        elif action == "STATS":
-            show_stats = not show_stats
-            if show_stats:
-                stats_data = history_mgr.get_summary_stats()
-            print(f"[*] Bảng thống kê học tập: {'MỞ' if show_stats else 'ĐÓNG'}")
-        elif action == "RESET":
-            detector.reset_focus_score()
-            hud.score_history = [100.0, 100.0]
-            start_time = time.time()
-            pomodoro.reset()
-            phone_events = web_events = distraction_events = drowsy_events = 0
-            last_alert_state = False
-            focus_score_sum = 0.0
-            focus_score_samples = 0
-            print("[*] Đã reset điểm, bộ đếm sự kiện, đồng hồ Pomodoro và phiên học.")
-        elif action == "MUTE":
-            is_muted = not is_muted
-            if is_muted:
-                alert_mgr.stop(min_play_sec=0, fade_ms=100)
-            state_str = "TẮT" if is_muted else "BẬT"
-            print(f"[*] Âm thanh cảnh báo: {state_str}")
-
-    alert_mgr.stop(min_play_sec=0, fade_ms=100)
-    phone_detector.stop()
-    cap.release()
-    cv2.destroyAllWindows()
-
-# No matching timeBeginPeriod call was made.
-
-    session_score = (
-        focus_score_sum / focus_score_samples
-        if focus_score_samples else detector.get_focus_score()
-    )
-
-    # 10. Tự động lưu phiên học vào focus_history.json và in báo cáo chi tiết
-    saved_session = history_mgr.save_session(
-        start_time=start_time,
-        end_time=time.time(),
-        focus_score=session_score,
-        phone_events=phone_events,
-        distraction_events=distraction_events,
-        drowsy_events=drowsy_events,
-        pomo_cycles=pomodoro.completed_cycles,
-        web_events=web_events
-    )
-
-    history_mgr.print_report(saved_session)
-
+            saved_session = history_mgr.save_session(
+                start_time=start_time,
+                end_time=time.time(),
+                focus_score=session_score,
+                phone_events=phone_events,
+                distraction_events=distraction_events,
+                drowsy_events=drowsy_events,
+                pomo_cycles=pomodoro.completed_cycles,
+                web_events=web_events
+            )
+            history_mgr.print_report(saved_session)
+        except Exception as e_save:
+            print(f'[-] Không thể lưu phiên học: {e_save}')
 if __name__ == "__main__":
     force_restart = any(arg in sys.argv for arg in ["--restart", "-r", "--force"])
     enforce_single_instance(force_restart=force_restart)

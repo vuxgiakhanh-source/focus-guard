@@ -48,7 +48,7 @@ class OneEuroFilter:
 
     def update(self, x, timestamp=None):
         if timestamp is None:
-            timestamp = time.time()
+            timestamp = time.monotonic()
         if self.last_time is None:
             self.last_time = timestamp
             return self.x_filt.update(x, 1.0)
@@ -77,7 +77,7 @@ class FocusDetector:
                  away_limit_sec=18.0):        # Rời bàn >= 18s mới bắt đầu báo (cho phép vươn vai, lấy nước)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản World-Class DMS):
-        1. MediaPipe suy luận xen kẽ; mặc định khoảng 2 lần/giây ở camera 6 FPS
+        1. MediaPipe suy luận xen kẽ; mặc định khoảng 1.5 lần/giây ở camera 6 FPS
         2. Bộ lọc One-Euro Filter (CHI 2012) triệt tiêu 100% rung giật và độ trễ
         3. NHTSA / ISO Standard PERCLOS (P80) + Micro-sleep detection
         4. Chế độ Desk Reading Mode: Tự động nhận diện tư thế cúi đầu đọc sách/viết bài
@@ -102,7 +102,7 @@ class FocusDetector:
 
         # Attentional Reservoir: Bình năng lượng tập trung động (0..100)
         self.focus_energy = 100.0
-        self.last_energy_time = time.time()
+        self.last_energy_time = time.monotonic()
         self._last_energy_update = None
 
         # NHTSA PERCLOS (Cửa sổ trượt 12s)
@@ -263,7 +263,7 @@ class FocusDetector:
         và độ mở mắt thực tế để xây dựng vùng an toàn cá nhân hóa chính xác.
         """
         self.is_recording_zone = True
-        self.record_start_time = time.time()
+        self.record_start_time = time.monotonic()
         self.record_duration = duration
         self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
         self.last_calib_msg = ""
@@ -337,7 +337,7 @@ class FocusDetector:
                 return msg
 
     def check_lighting(self, frame_bgr):
-        now = time.time()
+        now = time.monotonic()
         if now - self.last_brightness_check_time > 0.5:
             self.last_brightness_check_time = now
             sampled_mean = float(np.mean(frame_bgr[::20, ::20, 1]))
@@ -439,7 +439,7 @@ class FocusDetector:
         h, w, _ = frame_bgr.shape
         self.total_frames += 1
         self.frame_idx += 1
-        now = time.time()
+        now = time.monotonic()
 
         # Nếu đang trong giờ nghỉ Pomodoro, cho phép thư giãn 100%
         if is_pomodoro_break:
@@ -467,7 +467,7 @@ class FocusDetector:
                 "landmarks": None
             }
 
-        # 0.5. Phát hiện dịch chuyển góc camera / xoay webcam tức thì (0% CPU, 0.0001ms)
+        # 0.5. Phát hiện thay đổi khung cảnh trên ảnh thu nhỏ; chi phí thấp hơn nhiều so với suy luận AI.
         try:
             small_bgr = frame_bgr[::20, ::20, :]
             small_gray = cv2.cvtColor(small_bgr, cv2.COLOR_BGR2GRAY)
@@ -501,8 +501,8 @@ class FocusDetector:
                         has_phone = True
                         break
 
-        # 3. MediaPipe suy luận mỗi 3 frame (khoảng 2 lần/giây với nhịp camera 6 FPS)
-        is_infer_frame = (self.frame_idx % 3 == 0)
+        # 3. MediaPipe suy luận mỗi 4 frame (khoảng 1.5 lần/giây với nhịp camera 6 FPS)
+        is_infer_frame = (self.frame_idx % 4 == 0)
         if is_infer_frame:
             if self.is_pitch_black:
                 self.last_detection_data = None
@@ -742,22 +742,30 @@ class FocusDetector:
         was_camera_shifted = (now - getattr(self, "camera_shifted_time", 0.0) <= 2.5)
         angle_shifted = (abs(delta_yaw) >= 12.0) or (abs(delta_pitch) >= 10.0)
 
-        is_candidate_new_stance = (was_camera_shifted or angle_shifted) and (not has_phone) and (avg_ear >= 0.14) and (mar <= 0.65) and (pitch >= -68.0)
+        # Nếu không phải dịch chuyển camera vật lý, chỉ cho phép học tư thế mới nếu góc quay vẫn hướng về bàn học (|yaw| <= 35 độ)
+        valid_study_direction = was_camera_shifted or (abs(yaw) <= 35.0)
+
+        is_candidate_new_stance = (was_camera_shifted or angle_shifted) and valid_study_direction and (not has_phone) and (avg_ear >= 0.14) and (mar <= 0.60) and (pitch >= -68.0)
 
         if is_candidate_new_stance and (now - self.last_auto_adapt_time >= 4.0):
             self.auto_zone_buffer.append((now, yaw, pitch, avg_ear))
-            self.auto_zone_buffer = [s for s in self.auto_zone_buffer if (now - s[0]) <= 2.0]
+            max_buf_sec = 2.5 if was_camera_shifted else 3.5
+            self.auto_zone_buffer = [s for s in self.auto_zone_buffer if (now - s[0]) <= max_buf_sec]
 
-            if len(self.auto_zone_buffer) >= 6:
+            min_samples = 3 if was_camera_shifted else 4
+            min_time_span = 1.0 if was_camera_shifted else 2.0
+            max_var = 12.0 if was_camera_shifted else 8.0
+
+            if len(self.auto_zone_buffer) >= min_samples:
                 time_span = self.auto_zone_buffer[-1][0] - self.auto_zone_buffer[0][0]
-                if time_span >= 0.8:
+                if time_span >= min_time_span:
                     yaws_in_buf = [s[1] for s in self.auto_zone_buffer]
                     pitches_in_buf = [s[2] for s in self.auto_zone_buffer]
                     yaw_variance = max(yaws_in_buf) - min(yaws_in_buf)
                     pitch_variance = max(pitches_in_buf) - min(pitches_in_buf)
 
-                    # Người dùng đã ổn định hướng nhìn / góc cam mới (dao động <= 10 độ)
-                    if yaw_variance <= 10.0 and pitch_variance <= 10.0:
+                    # Người dùng đã ổn định hướng nhìn / góc cam mới (dao động nhỏ)
+                    if yaw_variance <= max_var and pitch_variance <= max_var:
                         new_yaw = float(np.median(yaws_in_buf))
                         new_pitch = float(np.median(pitches_in_buf))
                         new_ear = float(np.median([s[3] for s in self.auto_zone_buffer]))
@@ -808,15 +816,25 @@ class FocusDetector:
         is_yawning = (mar > 0.70)
 
         # CẬP NHẬT NHTSA PERCLOS (Cửa sổ trượt 12s)
-        self.ear_history.append((now, is_eyes_closed))
         cutoff_ear = now - 12.0
-        self.ear_history = [s for s in self.ear_history if s[0] >= cutoff_ear]
-        full_ear_window = bool(
-            self.ear_history and now - self.ear_history[0][0] >= 12.0
-        )
+        if self.ear_history and now - self.ear_history[-1][0] > 2.0:
+            # Không kéo dài trạng thái mắt cũ qua lúc camera/app bị treo.
+            self.ear_history.clear()
+        self.ear_history.append((now, is_eyes_closed))
+        # Giữ một mẫu ngay trước mép cửa sổ để xác nhận đủ 12 giây và tính đúng phần giao.
+        while len(self.ear_history) > 1 and self.ear_history[1][0] <= cutoff_ear:
+            self.ear_history.pop(0)
+
+        full_ear_window = bool(self.ear_history and self.ear_history[0][0] <= cutoff_ear)
         if full_ear_window and len(self.ear_history) >= 20:
-            closed_count = sum(1 for _, c in self.ear_history if c)
-            self.perclos_val = closed_count / len(self.ear_history)
+            closed_duration = 0.0
+            for index, (sample_time, eyes_closed) in enumerate(self.ear_history):
+                next_time = self.ear_history[index + 1][0] if index + 1 < len(self.ear_history) else now
+                interval_start = max(cutoff_ear, sample_time)
+                interval_end = min(now, next_time)
+                if eyes_closed and interval_end > interval_start:
+                    closed_duration += interval_end - interval_start
+            self.perclos_val = min(1.0, max(0.0, closed_duration / 12.0))
         else:
             self.perclos_val = 0.0
 
@@ -1044,7 +1062,7 @@ class FocusDetector:
     def reset_focus_score(self):
         """Đặt lại bình năng lượng tập trung về 100%"""
         self.focus_energy = 100.0
-        self.last_energy_time = time.time()
+        self.last_energy_time = time.monotonic()
         self.total_frames = 0
         self.focused_frames = 0
         self._last_energy_update = None

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import os
 import json
+import math
+import tempfile
 import time
 import sys
 from datetime import datetime, timedelta
@@ -22,20 +24,78 @@ class SessionHistoryManager:
         self.history_data = self._load_history()
 
     def _load_history(self):
-        if os.path.exists(self.history_file):
-            try:
-                with open(self.history_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {"sessions": [], "created_at": datetime.now().isoformat()}
+        default = {"sessions": [], "created_at": datetime.now().isoformat()}
+        if not os.path.exists(self.history_file):
+            return default
+
+        try:
+            with open(self.history_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or not isinstance(data.get("sessions", []), list):
+                raise ValueError("cấu trúc lịch sử không hợp lệ")
+
+            valid_sessions = []
+            numeric_fields = (
+                "duration_minutes", "duration_seconds", "focus_score",
+                "phone_events", "web_events", "distraction_events",
+                "drowsy_events", "pomodoro_cycles"
+            )
+            for raw in data.get("sessions", []):
+                if not isinstance(raw, dict):
+                    continue
+                date_value = raw.get("date")
+                try:
+                    datetime.strptime(date_value, "%Y-%m-%d")
+                except (TypeError, ValueError):
+                    continue
+                entry = dict(raw)
+                valid = True
+                for field in numeric_fields:
+                    default_value = 100.0 if field == "focus_score" else 0
+                    value = entry.get(field, default_value)
+                    try:
+                        value = float(value)
+                    except (TypeError, ValueError, OverflowError):
+                        valid = False
+                        break
+                    if not math.isfinite(value):
+                        valid = False
+                        break
+                    entry[field] = value
+                if valid:
+                    entry.setdefault("focus_score", 100.0)
+                    valid_sessions.append(entry)
+
+            result = dict(data)
+            result["sessions"] = valid_sessions
+            result.setdefault("created_at", default["created_at"])
+            return result
+        except (OSError, json.JSONDecodeError, ValueError) as e:
+            print(f"[-] Lịch sử học tập lỗi/không đọc được; bắt đầu danh sách mới: {e}")
+            return default
 
     def _save_history(self):
+        temp_path = None
         try:
-            with open(self.history_file, "w", encoding="utf-8") as f:
+            target_path = os.path.abspath(self.history_file)
+            target_dir = os.path.dirname(target_path)
+            os.makedirs(target_dir, exist_ok=True)
+            fd, temp_path = tempfile.mkstemp(prefix=".focus_history_", suffix=".tmp", dir=target_dir)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self.history_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, target_path)
+            return True
+        except (OSError, TypeError, ValueError) as e:
             print(f"[-] Không thể lưu lịch sử học tập: {e}")
+            return False
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def save_session(self, start_time, end_time, focus_score, phone_events, distraction_events, drowsy_events, pomo_cycles, web_events=0):
         """Lưu lại một phiên học hoàn chỉnh"""

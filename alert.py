@@ -51,7 +51,7 @@ class SoundAlertManager:
 
     def play_voice(self, alert_type, cooldown=3.5, force=False):
         """Phát giọng nói cảnh báo trên luồng nền"""
-        now = time.time()
+        now = time.monotonic()
         if not force and (now - self.last_alert_time < cooldown):
             return
 
@@ -90,7 +90,7 @@ class SoundAlertManager:
         Nếu âm thanh mới bắt đầu phát chưa đủ min_play_sec (ví dụ câu nhắc 1.2s),
         cho phép câu nói hoàn tất tự nhiên thay vì bị giật tắt giữa chừng.
         """
-        now = time.time()
+        now = time.monotonic()
         with self.lock:
             if not self.is_playing:
                 return

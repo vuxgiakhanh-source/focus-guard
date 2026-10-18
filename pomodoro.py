@@ -19,7 +19,7 @@ class PomodoroTimer:
         self.is_long_break = False
         self.current_break_target = self.break_sec
         self.is_active = True
-        self.state_start_time = time.time()
+        self.state_start_time = time.monotonic()
         self.pause_start_time = 0.0
         self.completed_cycles = 0
 
@@ -35,7 +35,7 @@ class PomodoroTimer:
             elapsed = self.pause_start_time - self.state_start_time
             return self.state, max(0, int(target_sec - elapsed)), None
 
-        now = time.time()
+        now = time.monotonic()
         elapsed = now - self.state_start_time
         event = None
 
@@ -69,7 +69,7 @@ class PomodoroTimer:
         return self.state, int(time_left), event
 
     def toggle(self):
-        now = time.time()
+        now = time.monotonic()
         if self.is_active:
             self.pause_start_time = now
             self.is_active = False
@@ -83,7 +83,7 @@ class PomodoroTimer:
         self.state = "WORK"
         self.is_long_break = False
         self.current_break_target = self.break_sec
-        now = time.time()
+        now = time.monotonic()
         self.state_start_time = now
         self.pause_start_time = now if not self.is_active else 0.0
         self.completed_cycles = 0

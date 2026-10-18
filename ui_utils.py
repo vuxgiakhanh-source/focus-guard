@@ -119,7 +119,7 @@ class HUDRenderer:
 
     def draw_hud(self, frame, result, session_duration_sec, pomodoro_info=None, is_muted=False, alert_msg="", show_stats=False, stats_data=None):
         h, w, _ = frame.shape
-        now = time.time()
+        now = time.monotonic()
 
         status = result.get("status", "FOCUSED")
         score = result.get("focus_score", 100)
