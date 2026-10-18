@@ -167,7 +167,7 @@ def run_focus_guard():
     cv2.setMouseCallback(WIN_TITLE, on_mouse_event)
 
     print("[+] Camera đã sẵn sàng!")
-    print("    - [Click / C] : ĐẶT TÂM GÓC HỌC (Nhìn thẳng và nhấn C để AI lưu góc ngồi và mắt tức thì).")
+    print("    - [Click / C] : XÁC ĐỊNH KHUNG HỌC (10s thu thập góc quay bàn học & mắt, bấm C chốt sớm).")
     print("    - [Click / P] : BẬT / TẮT đồng hồ Pomodoro (25p học / 5p nghỉ / 15p nghỉ dài sau 4 hiệp).")
     print("    - [Click / H] : BẬT / TẮT bảng THỐNG KÊ & CHUỖI HỌC TẬP (Daily Streak).")
     print("    - [Click / M] : BẬT / TẮT âm thanh cảnh báo.")
@@ -266,6 +266,15 @@ def run_focus_guard():
             result["label"] = f"CHẠM VÀO {web_distract['label'].upper()}"
             result["reason"] = f"Đang tương tác ({web_distract['duration']:.1f}s)..."
 
+
+        # Theo dõi chuyển trạng thái của quá trình xác định khung học
+        is_rec = result.get("is_recording_zone", False)
+        if last_recording_state and not is_rec:
+            calib_summary = result.get("calib_result_msg") or detector.last_calib_msg or "ĐÃ XÁC ĐỊNH XONG KHUNG HỌC TỰ NHIÊN! ✓"
+            alert_msg = calib_summary
+            alert_msg_time = time.time()
+            toast_mgr.show_toast("FocusGuard Khung Học", calib_summary, "calib_done", cooldown=1.0)
+        last_recording_state = is_rec
 
         # Theo dõi tự động thích ứng góc học tập mới (Autonomous Zone Adaptation)
         auto_msg = result.get("auto_adapted_zone")
@@ -414,13 +423,16 @@ def run_focus_guard():
         if action == "QUIT":
             break
         elif action == "CALIBRATE":
-            msg = detector.quick_calibrate()
+            if detector.is_recording_zone:
+                msg = detector.finalize_zone_learning()
+            else:
+                msg = detector.start_zone_learning(duration=10.0)
             alert_msg = msg
             alert_msg_time = time.time()
             toast_mgr.show_toast(
-                "FocusGuard Căn Chỉnh",
+                "FocusGuard Khung Học",
                 msg,
-                "calib_quick",
+                "calib_action",
                 cooldown=1.0
             )
         elif action == "POMODORO":

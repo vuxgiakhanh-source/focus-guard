@@ -38,11 +38,13 @@ class HUDRenderer:
         self.overlay_header = np.full((44, 433, 3), (18, 22, 28), dtype=np.uint8)
         self.overlay_score  = np.full((110, 173, 3), (18, 22, 28), dtype=np.uint8)
         self.overlay_pose   = np.full((56, 238, 3), (18, 22, 28), dtype=np.uint8)
+        self.overlay_calib  = np.full((64, 433, 3), (18, 24, 34), dtype=np.uint8)
 
         # Tiền render thanh Dock nút bấm ở đáy màn hình
         self.cached_button_strips = {}
-        self._pre_render_dock_bar(is_muted=False)
-        self._pre_render_dock_bar(is_muted=True)
+        for m in (False, True):
+            for r in (False, True):
+                self._pre_render_dock_bar(is_muted=m, is_rec=r)
 
         # Cache giao diện nhịp 15 FPS
         self.hud_frame_count = 0
@@ -61,7 +63,7 @@ class HUDRenderer:
                 self.font_cache[size] = ImageFont.load_default()
         return self.font_cache[size]
 
-    def _pre_render_dock_bar(self, is_muted):
+    def _pre_render_dock_bar(self, is_muted, is_rec=False):
         """Vẽ sẵn thanh Dock điều khiển bo tròn nổi dưới đáy màn hình"""
         dock_w = 616
         dock_h = 34
@@ -76,12 +78,16 @@ class HUDRenderer:
         # Khung viền ngoài của cả Dock
         d_btn.rounded_rectangle([0, 0, dock_w - 1, dock_h - 1], radius=8, fill=(18, 22, 30), outline=(50, 60, 75), width=1)
 
+        calib_label = "[C] Lưu ngay" if is_rec else "[C] Khung học"
+        calib_bg = (20, 75, 55) if is_rec else (25, 45, 75)
+        calib_txt = (100, 255, 180) if is_rec else (100, 210, 255)
+
         mute_label = "Mở tiếng" if is_muted else "Âm thanh"
         mute_bg = (55, 30, 45) if is_muted else (40, 35, 55)
         mute_text_col = (255, 160, 200) if is_muted else (210, 180, 255)
 
         buttons_def = [
-            ("CALIBRATE", 6,   112, "[C] Đặt tâm",     (25, 45, 75),  (100, 210, 255)),
+            ("CALIBRATE", 6,   112, calib_label,       calib_bg,      calib_txt),
             ("POMODORO",  116, 218, "[P] Pomodoro",    (25, 55, 45),  (110, 240, 175)),
             ("STATS",     222, 324, "[H] Thống kê",    (45, 35, 65),  (210, 180, 255)),
             ("MUTE",      328, 428, f"[M] {mute_label}", mute_bg,     mute_text_col),
@@ -101,7 +107,9 @@ class HUDRenderer:
             font = self.get_font(11)
             d_btn.text((lx1 + 8, 8), label, font=font, fill=text_color)
 
-        self.cached_button_strips[is_muted] = cv2.cvtColor(np.array(strip_pil), cv2.COLOR_RGB2BGR)
+        self.cached_button_strips[(is_muted, is_rec)] = cv2.cvtColor(np.array(strip_pil), cv2.COLOR_RGB2BGR)
+        if not is_rec:
+            self.cached_button_strips[is_muted] = self.cached_button_strips[(is_muted, is_rec)]
 
     def get_clicked_button(self, x, y):
         for name, (bx1, by1, bx2, by2) in self.buttons.items():
@@ -156,7 +164,7 @@ class HUDRenderer:
 
         # ---------------- ĐỊNH VỊ CÁC PANEL THÔNG MINH ----------------
         self.hud_frame_count += 1
-        should_refresh_text = (self.hud_frame_count % 4 == 0) or bool(alert_msg) or (self.cached_header is None)
+        should_refresh_text = (self.hud_frame_count % 4 == 0) or bool(alert_msg) or is_rec or (self.cached_header is None)
 
         # 1. Header nổi góc trên bên trái: x:[12..445], y:[8..52] (433 x 44)
         hx1, hy1, hx2, hy2 = 12, 8, 445, 52
@@ -283,11 +291,58 @@ class HUDRenderer:
             pose_roi[:] = cv2.cvtColor(np.array(pose_pil), cv2.COLOR_RGB2BGR)
             self.cached_pose_card = pose_roi.copy()
 
+        # ================= 3.5. BANNER XÁC ĐỊNH KHUNG HỌC TẬP (TOP-MODULAR HUD) =================
+        if is_rec:
+            cal_x1, cal_y1, cal_x2, cal_y2 = 12, 58, 445, 122
+            cal_roi = frame[cal_y1:cal_y2, cal_x1:cal_x2]
+            cv2.addWeighted(cal_roi, 0.20, self.overlay_calib, 0.80, 0, cal_roi)
+            cv2.rectangle(frame, (cal_x1, cal_y1), (cal_x2, cal_y2), (0, 210, 255), 1)
+
+            cal_time_left = result.get("record_time_left", 0.0)
+            cal_progress = max(0.0, min(1.0, (10.0 - cal_time_left) / 10.0))
+
+            cal_pil = Image.fromarray(cv2.cvtColor(cal_roi, cv2.COLOR_BGR2RGB))
+            d_cal = ImageDraw.Draw(cal_pil)
+
+            # Tiêu đề & phím tắt hoàn tất nhanh
+            d_cal.text((8, 4), f"🎯 XÁC ĐỊNH KHUNG HỌC TẬP ({cal_time_left:.1f}s)", font=self.get_font(12), fill=(0, 225, 255))
+            d_cal.text((310, 6), "[C] Hoàn tất ngay", font=self.get_font(10), fill=(100, 210, 255))
+
+            # Thanh tiến độ thời gian (Progress Bar)
+            bar_w = 417
+            d_cal.rounded_rectangle([8, 22, 8 + bar_w, 28], radius=3, fill=(35, 45, 60))
+            fill_w = int(bar_w * cal_progress)
+            if fill_w > 0:
+                d_cal.rounded_rectangle([8, 22, 8 + fill_w, 28], radius=3, fill=(0, 220, 255))
+
+            # Hướng dẫn động theo từng giai đoạn
+            if cal_time_left > 6.5:
+                guide_txt = "1️⃣ Nhìn thẳng tự nhiên vào màn hình / camera"
+                guide_col = (255, 235, 120)
+            elif cal_time_left > 3.0:
+                guide_txt = "2️⃣ Quay nhẹ sang 2 bên mép bàn học của bạn"
+                guide_col = (100, 240, 255)
+            else:
+                guide_txt = "3️⃣ Cúi đầu nhìn vở như lúc đang viết bài"
+                guide_col = (120, 255, 180)
+
+            d_cal.text((8, 32), guide_txt, font=self.get_font(11), fill=guide_col)
+
+            # Đọc góc thời gian thực
+            cur_yaw = result.get("yaw", 0.0)
+            cur_pitch = result.get("pitch", 0.0)
+            cur_ear = result.get("ear", 0.22)
+            d_cal.text((8, 47), f"Góc quay: {cur_yaw:+.0f}°  |  Cúi: {cur_pitch:+.0f}°  |  Mắt: {cur_ear:.2f}", font=self.get_font(10), fill=(185, 205, 235))
+
+            cal_roi[:] = cv2.cvtColor(np.array(cal_pil), cv2.COLOR_RGB2BGR)
+
         # ================= 4. BLIT DOCK NÚT BẤM (0.001 MS - ZERO CPU) =================
         dock_y1 = h - 44
         dock_y2 = h - 10
         dock_x1 = 12
-        dock_cached = self.cached_button_strips.get(is_muted)
+        dock_cached = self.cached_button_strips.get((is_muted, is_rec))
+        if dock_cached is None:
+            dock_cached = self.cached_button_strips.get(is_muted)
         if dock_cached is not None:
             frame[dock_y1:dock_y2, dock_x1:dock_x1 + 616] = dock_cached
 
