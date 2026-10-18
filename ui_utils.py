@@ -11,7 +11,7 @@ class HUDRenderer:
     - Phong cách Cyber-Glassmorphism trong suốt, không che khuất không gian học.
     - Bố cục thông minh: Header nổi, Thẻ Focus & Pomodoro tích hợp Sparkline, Mini Pose Card.
     - Thanh điều khiển Dock bo tròn phong cách macOS / iOS hiện đại.
-    - Tối ưu hóa 15 FPS Text Cadence Caching: Tiêu thụ CPU <3.5ms/frame.
+    - Cache các panel chữ để không dựng lại qua PIL ở mọi frame webcam.
     """
     def __init__(self, width=640, height=480):
         self.width = width
@@ -46,7 +46,7 @@ class HUDRenderer:
             for r in (False, True):
                 self._pre_render_dock_bar(is_muted=m, is_rec=r)
 
-        # Cache giao diện nhịp 15 FPS
+        # Cập nhật chữ tối đa 3 lần/giây khi app chạy ở 6 FPS.
         self.hud_frame_count = 0
         self.cached_header = None
         self.cached_score_card = None
@@ -164,7 +164,7 @@ class HUDRenderer:
 
         # ---------------- ĐỊNH VỊ CÁC PANEL THÔNG MINH ----------------
         self.hud_frame_count += 1
-        should_refresh_text = (self.hud_frame_count % 4 == 0) or bool(alert_msg) or is_rec or (self.cached_header is None)
+        should_refresh_text = (self.hud_frame_count % 2 == 0) or bool(alert_msg) or is_rec or (self.cached_header is None)
 
         # 1. Header nổi góc trên bên trái: x:[12..445], y:[8..52] (433 x 44)
         hx1, hy1, hx2, hy2 = 12, 8, 445, 52

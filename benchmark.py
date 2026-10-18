@@ -92,8 +92,10 @@ print()
 
 # Tinh CPU% thuc te cua code (khong tinh cam wait)
 cam_pct = np.mean(cam_times) / (np.mean(cam_times) + code_avg) * 100
-code_pct = code_avg / 33.33 * 100
-print(f'  Code chiem {code_pct:.1f}% thoi gian 1 frame (33ms @ 30fps)')
+target_fps = 6
+frame_budget_ms = 1000.0 / target_fps
+code_pct = code_avg / frame_budget_ms * 100
+print(f'  Code chiem {code_pct:.1f}% ngan sach xu ly moi frame ({target_fps} FPS)')
 print(f'  Camera I/O chiem {cam_pct:.0f}% tong frame time')
 
 if code_avg < 8:

@@ -83,5 +83,7 @@ class PomodoroTimer:
         self.state = "WORK"
         self.is_long_break = False
         self.current_break_target = self.break_sec
-        self.state_start_time = time.time()
-        self.pause_start_time = 0.0
+        now = time.time()
+        self.state_start_time = now
+        self.pause_start_time = now if not self.is_active else 0.0
+        self.completed_cycles = 0

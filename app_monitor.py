@@ -106,9 +106,9 @@ class AppDistractionMonitor:
 
         # Danh sách ứng dụng an toàn và công cụ học tập / nghiên cứu
         safe_keywords = [
-            "visual studio", "code", "pycharm", "intellij", "cursor",
-            "sublime", "notepad", "word", "excel", "powerpoint", "acrobat",
-            "pdf", "terminal", "powershell", "cmd.exe", "git", "google search",
+            "visual studio code", "pycharm", "intellij", "cursor",
+            "sublime", "notepad", "excel", "powerpoint", "acrobat",
+            "pdf", "terminal", "powershell", "cmd.exe", "git bash", "google search",
             "tìm kiếm trên google", "tìm trên google", "bing search", "github", "stackoverflow",
             "notion", "obsidian", "anki", "quizlet", "overleaf", "latex", "calculator",
             "desmos", "geogebra", "duolingo", "khan academy", "coursera", "edx", "udemy",
@@ -116,7 +116,12 @@ class AppDistractionMonitor:
             "wps office", "libreoffice", "google docs", "google sheets", "google slides",
             "google drive", "zotero", "mendeley"
         ]
-        if any(safe in t_low for safe in safe_keywords):
+        safe_title_patterns = [
+            r"(?:^|[-–—|]\s*)(?:microsoft\s+)?word\s*$"
+        ]
+        if any(safe in t_low for safe in safe_keywords) or any(
+            re.search(pattern, t_low) for pattern in safe_title_patterns
+        ):
             self.active_operate_time = 0.0
             self.current_distraction = None
             return None
@@ -162,7 +167,7 @@ class AppDistractionMonitor:
                 educational_yt_keywords = [
                     "tutorial", "học", "bài giảng", "lecture", "course", "hướng dẫn",
                     "ôn thi", "toán", "văn", "tiếng anh", "ielts", "toeic", "lập trình",
-                    "code", "python", "khoa học", "lịch sử", "địa lý", "vật lý",
+                    "coding", "programming", "python", "khoa học", "lịch sử", "địa lý", "vật lý",
                     "hóa học", "sinh học", "khan academy", "coursera", "edx", "mit opencourseware",
                     "crash course", "study with me", "lofi hip hop", "lofi study", "nhạc tập trung",
                     "music.youtube"

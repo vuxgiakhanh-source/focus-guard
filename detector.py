@@ -77,7 +77,7 @@ class FocusDetector:
                  away_limit_sec=18.0):        # Rời bàn >= 18s mới bắt đầu báo (cho phép vươn vai, lấy nước)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản World-Class DMS):
-        1. MediaPipe suy luận xen kẽ; mặc định khoảng 3.3 lần/giây ở camera 10 FPS
+        1. MediaPipe suy luận xen kẽ; mặc định khoảng 2 lần/giây ở camera 6 FPS
         2. Bộ lọc One-Euro Filter (CHI 2012) triệt tiêu 100% rung giật và độ trễ
         3. NHTSA / ISO Standard PERCLOS (P80) + Micro-sleep detection
         4. Chế độ Desk Reading Mode: Tự động nhận diện tư thế cúi đầu đọc sách/viết bài
@@ -103,6 +103,7 @@ class FocusDetector:
         # Attentional Reservoir: Bình năng lượng tập trung động (0..100)
         self.focus_energy = 100.0
         self.last_energy_time = time.time()
+        self._last_energy_update = None
 
         # NHTSA PERCLOS (Cửa sổ trượt 12s)
         self.ear_history = []
@@ -168,9 +169,9 @@ class FocusDetector:
         self.dist_coeffs = np.zeros((4, 1), dtype=np.float64)
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-        # Bảng LUT Gamma Correction thích ứng phòng tối (Tối ưu hóa Zero Latency: 0.0008ms)
-        inv_gamma = 1.0 / 0.68
-        self.gamma_table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
+        # Gamma < 1 làm sáng midtones trong phòng tối.
+        gamma = 0.68
+        self.gamma_table = np.array([((i / 255.0) ** gamma) * 255 for i in range(256)]).astype("uint8")
 
         self.frame_rgb_buffer = np.empty((480, 640, 3), dtype=np.uint8)
         self.image_points = np.empty((6, 2), dtype=np.float64)
@@ -500,7 +501,7 @@ class FocusDetector:
                         has_phone = True
                         break
 
-        # 3. MediaPipe suy luận xen kẽ: Chạy cách 2 khung hình (~7 FPS AI) - Giảm 55% CPU
+        # 3. MediaPipe suy luận mỗi 3 frame (khoảng 2 lần/giây với nhịp camera 6 FPS)
         is_infer_frame = (self.frame_idx % 3 == 0)
         if is_infer_frame:
             if self.is_pitch_black:
@@ -810,7 +811,10 @@ class FocusDetector:
         self.ear_history.append((now, is_eyes_closed))
         cutoff_ear = now - 12.0
         self.ear_history = [s for s in self.ear_history if s[0] >= cutoff_ear]
-        if len(self.ear_history) >= 20:
+        full_ear_window = bool(
+            self.ear_history and now - self.ear_history[0][0] >= 12.0
+        )
+        if full_ear_window and len(self.ear_history) >= 20:
             closed_count = sum(1 for _, c in self.ear_history if c)
             self.perclos_val = closed_count / len(self.ear_history)
         else:
@@ -943,7 +947,7 @@ class FocusDetector:
             should_alert = False
             alert_type = None
 
-        # Ưu tiên 6: KHOẢNG CÁCH MẮT - MÀN HÌNH (CHỈ BÁO TRÊN HUD KHI DÍ SÁT MẶT > 6.0s)
+        # Ưu tiên 6: Ước lượng tương đối độ lớn khuôn mặt trong khung; không quy đổi pixel thành cm.
         eye_dist_px = math.hypot((landmarks[33].x - landmarks[263].x) * w, (landmarks[33].y - landmarks[263].y) * h)
         if (not is_reading_desk) and eye_dist_px > 145.0:
             if self.too_close_start is None:
@@ -952,7 +956,7 @@ class FocusDetector:
                 if status == "FOCUSED":
                     status = "WARNING"
                     label = "NGỒI QUÁ GẦN MÀN HÌNH"
-                    reason = "Hãy lùi xa màn hình (>= 50cm) để bảo vệ mắt!"
+                    reason = "Mặt đang chiếm nhiều khung hình; kiểm tra lại khoảng cách ngồi."
                     should_alert = False
                     alert_type = None
         else:
@@ -1002,25 +1006,36 @@ class FocusDetector:
             "landmarks": landmarks
         }
 
+    @staticmethod
+    def _energy_rate_for_status(status):
+        if status in ["FOCUSED", "CALIBRATING"]:
+            return 0.8
+        if status == "BREAK":
+            return 1.0
+        if status == "WARNING":
+            return -0.6
+        if status in ["DISTRACTED", "AWAY"]:
+            return -2.5
+        if status == "DROWSY":
+            return -3.0
+        return 0.0
+
     def _update_energy(self, status, now):
-        """Cập nhật bình năng lượng tập trung động (Attentional Reservoir)"""
+        """Cập nhật bình năng lượng tập trung động (Attentional Reservoir)."""
         dt = max(0.0, min(0.5, now - self.last_energy_time))
         self.last_energy_time = now
+        previous_energy = self.focus_energy
+        self._last_energy_update = (previous_energy, dt)
+        rate = self._energy_rate_for_status(status)
+        self.focus_energy = max(0.0, min(100.0, previous_energy + rate * dt))
 
-        if status in ["FOCUSED", "CALIBRATING"]:
-            rate = +0.8   # Hồi phục mượt mà khi tập trung
-        elif status == "BREAK":
-            rate = +1.0   # Hồi phục trong giờ giải lao
-        elif status == "WARNING":
-            rate = -0.6   # Giảm nhẹ khi có dấu hiệu xao nhãng
-        elif status in ["DISTRACTED", "AWAY"]:
-            rate = -2.5   # Giảm nhanh khi mất tập trung thật sự
-        elif status == "DROWSY":
-            rate = -3.0   # Giảm nhanh khi ngủ gật
-        else:
-            rate = 0.0
-
-        self.focus_energy = max(0.0, min(100.0, self.focus_energy + rate * dt))
+    def override_current_energy_status(self, status):
+        """Thay trạng thái năng lượng của frame vừa xử lý bằng trạng thái ngoài."""
+        if self._last_energy_update is None:
+            return
+        previous_energy, dt = self._last_energy_update
+        rate = self._energy_rate_for_status(status)
+        self.focus_energy = max(0.0, min(100.0, previous_energy + rate * dt))
 
     def get_focus_score(self):
         """Trả về điểm tập trung thích ứng thời gian thực (0..100)"""
@@ -1032,3 +1047,4 @@ class FocusDetector:
         self.last_energy_time = time.time()
         self.total_frames = 0
         self.focused_frames = 0
+        self._last_energy_update = None

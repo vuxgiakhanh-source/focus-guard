@@ -69,8 +69,8 @@ class KinematicPhoneTracker:
         self.tracks = []
 
     def update(self, raw_boxes, now):
-        # Dọn dẹp vết cũ quá 1.0s
-        self.tracks = [tr for tr in self.tracks if (now - tr.last_seen) < 1.0]
+        # Dọn dẹp vết cũ quá 2.0s
+        self.tracks = [tr for tr in self.tracks if (now - tr.last_seen) < 2.0]
 
         results = []
         for item in raw_boxes:
@@ -108,17 +108,19 @@ class KinematicPhoneTracker:
 
 
 class PhoneDetector:
-    def __init__(self, model_name="yolov8n.pt", conf_thresh=0.40):
+    def __init__(self, model_name="yolov8n.pt", conf_thresh=0.40, inference_interval_sec=0.75):
         """
         Bộ phát hiện điện thoại trên tay người dùng sử dụng YOLOv8 Nano SIÊU TỐI ƯU HÓA:
         - torch.inference_mode(): Loại bỏ 100% overhead autograd của PyTorch
         - Model Warmup: Pre-warm mô hình ngay khi nạp, triệt tiêu giật lag ở khung hình đầu tiên
-        - Tần suất quét thích ứng ~5 FPS (mỗi 0.20s), tiêu thụ <8% của 1 CPU thread
+        - Quét tối đa khoảng 1.3 FPS; CPU thực tế còn tùy model và cấu hình máy
         - Kinematic Tracker + Hand Contact: Phân biệt chính xác điện thoại CẦM TRÊN TAY vs ĐẶT TĨNH TRÊN BÀN / KỆ
         - Anti-Hallucination Filters: Loại bỏ hoàn toàn sách vở, lót chuột, post-it, điều khiển, vật chữ nhật
         - Grace Persistence (0.6s): Giữ hộp nhận diện ổn định, chống chớp tắt khi tay chuyển động
         """
         self.conf_thresh = conf_thresh
+        self.inference_interval_sec = max(0.25, float(inference_interval_sec))
+        self.detection_ttl_sec = max(1.2, self.inference_interval_sec * 1.75)
         self.model = None
         self.torch = None
         self.is_ready = False
@@ -141,7 +143,9 @@ class PhoneDetector:
             tu.NUM_THREADS = 1
             self.torch = torch
             torch.set_num_threads(1)
-            torch.set_num_interop_threads(1)
+            # main.py may already have set this process-wide value before starting this thread.
+            if torch.get_num_interop_threads() != 1:
+                torch.set_num_interop_threads(1)
             torch.set_grad_enabled(False)
 
             from ultralytics import YOLO
@@ -153,18 +157,18 @@ class PhoneDetector:
                 self.model.predict(dummy, classes=[67], conf=0.5, verbose=False, imgsz=256)
 
             self.is_ready = True
-            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (conf=0.40, imgsz=256, 2 FPS Eco Mode Active)!")
+            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (imgsz=256, tối đa khoảng 1.3 FPS).")
             threading.Thread(target=self._inference_loop, daemon=True).start()
         except Exception as e:
             print(f"[-] Không thể nạp YOLOv8: {e}")
 
     def update_frame(self, frame):
-        """Chỉ nhận frame nếu đã đến chu kỳ quét 2 FPS (mỗi 0.50s) - Tiết kiệm 65% CPU"""
+        """Chỉ gửi frame mới cho YOLO khi đủ thời gian giữa hai lần suy luận."""
         if not self.is_ready:
             return
         
-        now = time.time()
-        if now - self.last_infer_time >= 0.50:
+        now = time.monotonic()
+        if now - self.last_infer_time >= self.inference_interval_sec:
             with self.lock:
                 self.pending_frame = frame.copy()
             self.frame_event.set()
@@ -227,7 +231,8 @@ class PhoneDetector:
         skin_mask = (ycrcb[:, :, 1] >= 133) & (ycrcb[:, :, 1] <= 173) & \
                     (ycrcb[:, :, 2] >= 77) & (ycrcb[:, :, 2] <= 127)
         skin_pixels = np.count_nonzero(skin_mask)
-        skin_ratio = float(skin_pixels) / float(hand_roi.size)
+        skin_pixel_count = hand_roi.shape[0] * hand_roi.shape[1]
+        skin_ratio = float(skin_pixels) / max(1, skin_pixel_count)
         has_hand_contact = (skin_ratio >= 0.030)
 
         # 4. LOẠI BỎ TRANG SÁCH / GIẤY VỞ TRẮNG TRÊN BÀN HỌC (PHOTOMETRIC PAPER FILTER):
@@ -266,7 +271,7 @@ class PhoneDetector:
                 self.pending_frame = None
 
             if frame_to_process is not None and self.model is not None and self.torch is not None:
-                now = time.time()
+                now = time.monotonic()
                 self.last_infer_time = now
                 try:
                     with self.torch.inference_mode():
@@ -299,7 +304,7 @@ class PhoneDetector:
                             self.latest_boxes = tracked
                             self.last_detected_time = now
                         else:
-                            if now - self.last_detected_time > 1.10:
+                            if now - self.last_detected_time > self.detection_ttl_sec:
                                 self.latest_boxes = []
                 except Exception:
                     pass
@@ -307,7 +312,7 @@ class PhoneDetector:
     def get_detected_phones(self):
         """Trả về danh sách các điện thoại nhận diện được dạng (x1, y1, x2, y2, conf, is_held)"""
         with self.lock:
-            if time.time() - self.last_detected_time > 1.20:
+            if time.monotonic() - self.last_detected_time > self.detection_ttl_sec:
                 return []
             return list(self.latest_boxes)
 

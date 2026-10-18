@@ -46,21 +46,51 @@ from toast_notifier import WindowsToastManager
 from app_monitor import AppDistractionMonitor
 
 WIN_TITLE = "FocusGuard - AI Distraction & Drowsiness Detector"
-TARGET_FPS = 10
-BREAK_TARGET_FPS = 5
+TARGET_FPS = 6
+BREAK_TARGET_FPS = 3
 
 _instance_mutex = None
 
-def enforce_single_instance():
+def enforce_single_instance(force_restart=False):
     """
     Đảm bảo chỉ có duy nhất 1 phiên bản FocusGuard PRO hoạt động cùng lúc.
-    Ngăn chặn hoàn toàn tình trạng mở 2 app cùng lúc làm nghẽn webcam dẫn tới màn hình đen
-    và liên tục báo sai 'quay lại bàn học'.
+    Tự động quét và diệt sạch các tiến trình ngầm (zombie) mồ côi từ các phiên trước
+    bị kẹt, giải phóng 100% CPU và giải phóng Webcam trước khi khởi tạo phiên mới.
     """
     global _instance_mutex
+    import psutil
     ERROR_ALREADY_EXISTS = 183
     mutex_name = "FocusGuard_PRO_SingleInstance_Mutex_v2"
+    my_pid = os.getpid()
 
+    # 1. Quét tìm các tiến trình python/pythonw khác đang chạy main.py của FocusGuard
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if proc.info['pid'] == my_pid:
+                continue
+            name = (proc.info['name'] or '').lower()
+            if 'python' in name:
+                cmdline = proc.info.get('cmdline') or []
+                cmdline_str = " ".join(cmdline).lower()
+                if "main.py" in cmdline_str and ("focus-guard" in cmdline_str or os.path.basename(__file__).lower() in cmdline_str):
+                    user32 = ctypes.windll.user32
+                    hwnd = user32.FindWindowW(None, WIN_TITLE)
+                    # Nếu tiến trình cũ không có cửa sổ hiển thị (zombie ngầm) hoặc người dùng yêu cầu ép chạy lại
+                    if not hwnd or force_restart:
+                        print(f"[*] Đang dọn dẹp tiến trình FocusGuard chạy ngầm cũ (PID: {proc.info['pid']})...")
+                        proc.kill()
+                        proc.wait(timeout=2)
+                        time.sleep(0.2)
+                    else:
+                        # Đã có cửa sổ đang mở bình thường trên màn hình -> đưa lên trước
+                        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                        user32.SetForegroundWindow(hwnd)
+                        print(f"[*] FocusGuard đang hoạt động (PID: {proc.info['pid']}). Đã đưa cửa sổ lên phía trước.")
+                        sys.exit(0)
+        except Exception:
+            pass
+
+    # 2. Tạo Mutex kiểm soát đơn phiên
     try:
         _instance_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
         last_error = ctypes.windll.kernel32.GetLastError()
@@ -68,16 +98,9 @@ def enforce_single_instance():
             user32 = ctypes.windll.user32
             hwnd = user32.FindWindowW(None, WIN_TITLE)
             if hwnd:
-                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.ShowWindow(hwnd, 9)
                 user32.SetForegroundWindow(hwnd)
-            user32.MessageBoxW(
-                0,
-                "FocusGuard PRO hiện đang chạy trên máy tính rồi bạn nhé!\n\n"
-                "Cửa sổ ứng dụng đã được đưa lên phía trước để bạn tiếp tục buổi học.",
-                "FocusGuard PRO - Ứng Dụng Đang Chạy",
-                0x40 | 0x00  # MB_ICONINFORMATION | MB_OK
-            )
-            sys.exit(0)
+                sys.exit(0)
     except Exception:
         pass
 
@@ -187,6 +210,8 @@ def run_focus_guard():
     web_events = 0
     last_alert_state = False
     last_web_alerting = False
+    focus_score_sum = 0.0
+    focus_score_samples = 0
 
     alert_msg = ""
     alert_msg_time = 0
@@ -260,6 +285,8 @@ def run_focus_guard():
             result["label"] = f"CHẠM VÀO {web_distract['label'].upper()}"
             result["reason"] = f"Đang tương tác ({web_distract['duration']:.1f}s)..."
 
+        focus_score_sum += float(result.get("focus_score", detector.get_focus_score()))
+        focus_score_samples += 1
 
         # Theo dõi chuyển trạng thái của quá trình xác định khung học
         is_rec = result.get("is_recording_zone", False)
@@ -353,16 +380,19 @@ def run_focus_guard():
         # 8. Hiển thị
         cv2.imshow(WIN_TITLE, frame)
 
-        # 9. Bắt phím bấm và kiểm tra đóng cửa sổ (bấm nút X)
-        if cv2.getWindowProperty(WIN_TITLE, cv2.WND_PROP_VISIBLE) < 1:
-            print("[*] Đóng cửa sổ ứng dụng.")
-            break
-
         # Giới hạn nhịp xử lý; thời gian suy luận AI vẫn phụ thuộc cấu hình máy.
         loop_elapsed = time.perf_counter() - loop_start
         remaining = frame_interval - loop_elapsed
         wait_ms = max(1, int(remaining * 1000)) if remaining > 0 else 1
         key = cv2.waitKey(wait_ms) & 0xFF
+
+        # 9. Kiểm tra đóng cửa sổ (bấm nút X) - BẮT BUỘC kiểm tra sau cv2.waitKey()
+        try:
+            if cv2.getWindowProperty(WIN_TITLE, cv2.WND_PROP_VISIBLE) < 1:
+                print("[*] Đóng cửa sổ ứng dụng (người dùng bấm nút X).")
+                break
+        except Exception:
+            break
 
         # Xử lý hành động từ Click chuột hoặc Phím tắt bàn phím
         action = None
@@ -411,6 +441,8 @@ def run_focus_guard():
             pomodoro.reset()
             phone_events = web_events = distraction_events = drowsy_events = 0
             last_alert_state = False
+            focus_score_sum = 0.0
+            focus_score_samples = 0
             print("[*] Đã reset điểm, bộ đếm sự kiện, đồng hồ Pomodoro và phiên học.")
         elif action == "MUTE":
             is_muted = not is_muted
@@ -426,13 +458,16 @@ def run_focus_guard():
 
 # No matching timeBeginPeriod call was made.
 
-    final_score = detector.get_focus_score()
+    session_score = (
+        focus_score_sum / focus_score_samples
+        if focus_score_samples else detector.get_focus_score()
+    )
 
     # 10. Tự động lưu phiên học vào focus_history.json và in báo cáo chi tiết
     saved_session = history_mgr.save_session(
         start_time=start_time,
         end_time=time.time(),
-        focus_score=final_score,
+        focus_score=session_score,
         phone_events=phone_events,
         distraction_events=distraction_events,
         drowsy_events=drowsy_events,
@@ -443,7 +478,8 @@ def run_focus_guard():
     history_mgr.print_report(saved_session)
 
 if __name__ == "__main__":
-    enforce_single_instance()
+    force_restart = any(arg in sys.argv for arg in ["--restart", "-r", "--force"])
+    enforce_single_instance(force_restart=force_restart)
     try:
         run_focus_guard()
     except Exception as e:
