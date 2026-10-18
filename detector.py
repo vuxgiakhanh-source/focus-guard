@@ -66,10 +66,10 @@ class FocusDetector:
         }
         self.is_study_zone_set = True
 
-        # Học vùng học tập (Calibration 60s) & Tự động cân chỉnh EAR cho kính / mắt híp
+        # Học vùng học tập (Calibration 2 phút / 120s) & Tự động cân chỉnh EAR cho kính / mắt híp
         self.is_recording_zone = False
         self.record_start_time = 0
-        self.record_duration = 60.0
+        self.record_duration = 120.0
         self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
 
         if not os.path.exists(self.model_path):
@@ -179,7 +179,7 @@ class FocusDetector:
             self.save_study_zone()
         self.is_recording_zone = False
 
-    def start_zone_learning(self, duration=60.0):
+    def start_zone_learning(self, duration=120.0):
         if self.is_recording_zone:
             if len(self.recorded_samples["yaw"]) > 30:
                 self.finalize_zone_learning()
@@ -435,8 +435,8 @@ class FocusDetector:
 
             return {
                 "status": "CALIBRATING",
-                "label": "ĐANG HỌC GÓC HỌC TẬP",
-                "reason": f"Hãy đọc sách, nhìn màn hình, viết bài... ({int(record_time_left)}s)",
+                "label": "ĐANG HỌC GÓC HỌC TẬP (2 PHÚT)",
+                "reason": f"Cố gắng tập trung tối đa trong 2 phút này... ({int(record_time_left)}s)",
                 "alert": False,
                 "alert_type": None,
                 "ear": avg_ear,

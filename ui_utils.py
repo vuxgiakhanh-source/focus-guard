@@ -249,7 +249,7 @@ class HUDRenderer:
         # ---------------- 5. BANNER HỌC GÓC HOẶC THÔNG BÁO FLASH ----------------
         if is_rec:
             time_left = result.get("record_time_left", 0.0)
-            progress = max(0.0, min(1.0, (60.0 - time_left) / 60.0))
+            progress = max(0.0, min(1.0, (120.0 - time_left) / 120.0))
 
             box_w = 560
             box_h = 110
@@ -270,13 +270,13 @@ class HUDRenderer:
             d_rec.rectangle([bar_x1, bar_y, bar_x1 + bar_w, bar_y + 6], fill=(60, 75, 95))
             d_rec.rectangle([bar_x1, bar_y, bar_x1 + int(bar_w * progress), bar_y + 6], fill=(0, 255, 200))
 
-            title = f"AI ĐANG HỌC GÓC HỌC & ĐO MẮT: Còn {int(time_left)}s ({int(progress*100)}%)"
-            sub1 = "Hãy ngồi học tự nhiên: đọc sách, nhìn màn hình, viết bài..."
-            sub2 = "💡 Tự động đo độ mở mắt cho người đeo kính & tự lưu góc ngồi"
+            title = f"AI ĐANG HỌC GÓC HỌC & ĐO MẮT (2 PHÚT): Còn {int(time_left)}s ({int(progress*100)}%)"
+            sub1 = "Dành cho người mới: Cố gắng tập trung nhất có thể trong 2 phút này!"
+            sub2 = "💡 AI đang ghi nhớ góc ngồi học nghiêm túc & dáng mắt mở chuẩn của bạn"
 
             d_rec.text((25, 14), title, font=self.get_font(16), fill=(0, 255, 255))
-            d_rec.text((25, 40), sub1, font=self.get_font(13), fill=(240, 240, 240))
-            d_rec.text((25, 62), sub2, font=self.get_font(12), fill=(255, 210, 80))
+            d_rec.text((25, 40), sub1, font=self.get_font(13), fill=(255, 230, 100))
+            d_rec.text((25, 62), sub2, font=self.get_font(12), fill=(180, 240, 255))
             rec_roi[:] = cv2.cvtColor(np.array(rec_pil), cv2.COLOR_RGB2BGR)
 
         elif alert_msg:

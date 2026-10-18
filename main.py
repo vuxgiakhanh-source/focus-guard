@@ -100,15 +100,26 @@ def run_focus_guard():
     cv2.setMouseCallback(WIN_TITLE, on_mouse_event)
 
     print("[+] Camera đã sẵn sàng!")
-    print("    - [Click / C] : DẠY AI GÓC HỌC TẬP (60 giây, tự đo độ mở mắt cho kính).")
+    print("    - [Click / C] : DẠY AI GÓC HỌC TẬP (2 PHÚT, cố gắng tập trung cao độ để AI lưu góc & mắt chuẩn).")
     print("    - [Click / P] : BẬT / TẮT đồng hồ Pomodoro (25p học / 5p nghỉ).")
     print("    - [Click / M] : BẬT / TẮT âm thanh cảnh báo.")
     print("    - [Click / R] : RESET điểm tập trung.")
     print("    - [Click / Q] : THOÁT ứng dụng & Lưu lịch sử học tập.")
     print("=" * 65)
 
-    # Bật thông báo Toast chào mừng
-    toast_mgr.show_toast("FocusGuard AI", "Hệ thống giám sát tập trung đã sẵn sàng! Chúc bạn học tốt!", "welcome", cooldown=1.0)
+    # Tự động bật học góc học tập 2 phút nếu là lần đầu tiên sử dụng
+    if not os.path.exists("study_zone.json"):
+        detector.start_zone_learning(120.0)
+        toast_mgr.show_toast(
+            "FocusGuard Chào Mừng",
+            "🎯 Lần đầu tiên: Cố gắng ngồi học tập trung nhất có thể trong 2 phút để AI học góc chuẩn!",
+            "first_calib",
+            cooldown=1.0
+        )
+        print("[*] LẦN ĐẦU TIÊN SỬ DỤNG: Tự động bật 2 PHÚT đo góc học & dáng mắt (Hãy tập trung tối đa)!")
+    else:
+        # Bật thông báo Toast chào mừng
+        toast_mgr.show_toast("FocusGuard AI", "Hệ thống giám sát tập trung đã sẵn sàng! Chúc bạn học tốt!", "welcome", cooldown=1.0)
 
     start_time = time.time()
     is_muted = False
@@ -121,9 +132,6 @@ def run_focus_guard():
     alert_msg = ""
     alert_msg_time = 0
     last_recording_state = False
-
-    # Tự động bật học góc học tập 60s lần đầu tiên nếu chưa có file
-    auto_started_learning = False
 
     failed_frames_count = 0
     while True:
@@ -259,8 +267,14 @@ def run_focus_guard():
         if action == "QUIT":
             break
         elif action == "CALIBRATE":
-            detector.start_zone_learning(60.0)
-            print("[*] Bắt đầu phiên học góc học tập & đo mắt 60 giây...")
+            detector.start_zone_learning(120.0)
+            toast_mgr.show_toast(
+                "FocusGuard Khởi Tạo",
+                "🎯 Hãy cố gắng ngồi học tập trung nhất có thể trong 2 phút để AI học góc chuẩn!",
+                "calib_start",
+                cooldown=2.0
+            )
+            print("[*] Bắt đầu phiên học góc học tập & đo mắt 2 PHÚT (Hãy tập trung tối đa)...")
         elif action == "POMODORO":
             state_active = pomodoro.toggle()
             print(f"[*] Chế độ Pomodoro: {'BẬT' if state_active else 'TẮT'}")

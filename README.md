@@ -109,13 +109,16 @@ python main.py
 * Mở app lên. Đặt laptop hoặc webcam ở góc bạn thấy thoải mái nhất (thẳng mặt hoặc chéo bên đều được).
 * Đảm bảo khung camera có nhìn thấy mặt bạn.
 
-#### Bước 2: Dạy AI góc học tập & Dáng mắt (Khuyên dùng khi bắt đầu)
-* Bấm nút **`[C] Dạy góc học`** trên màn hình (hoặc nhấn phím **`C`**).
-* Màn hình sẽ hiện thanh tiến trình đếm ngược 60 giây.
-* Trong 60 giây này, bạn chỉ cần ngồi học bình thường (đọc sách, nhìn màn hình, viết bài...).
-* 👉 **AI sẽ tự động:**
-  1. Ghi nhớ góc ngồi học tự nhiên của bạn.
-  2. Đo độ mở mắt của bạn (đặc biệt hữu ích nếu bạn **đeo kính cận** hoặc có **dáng mắt híp**) để không bao giờ bị báo nhầm buồn ngủ!
+#### Bước 2: Dạy AI góc học tập & Dáng mắt (⭐ ĐẶC BIỆT DÀNH CHO NGƯỜI DÙNG LẦN ĐẦU)
+> [!IMPORTANT]
+> **Khoảng thời gian vàng 2 phút (First-Time Calibration):**  
+> Khi khởi chạy lần đầu tiên, FocusGuard sẽ tự động kích hoạt chế độ học góc (hoặc bạn có thể bấm nút **`[C] Dạy góc học`**).  
+> **Bạn hãy cố gắng ngồi học tập trung cao độ nhất có thể trong đúng 2 phút này** (ngồi thẳng lưng, đọc sách, nhìn màn hình, viết bài nghiêm túc, không dùng điện thoại hay quay ngang ngửa).
+> 
+> 👉 **Tại sao 2 phút này lại cực kỳ quan trọng?**
+> 1. **Ghi nhớ góc học tập chuẩn:** AI sẽ lấy mẫu hàng trăm khung hình tư thế nghiêm túc của bạn để lưu làm chuẩn tham chiếu.
+> 2. **Cân chỉnh độ mở mắt cho người đeo kính & mắt híp:** AI tự đo kích thước con ngươi và độ mở mí mắt tự nhiên của bạn để tính ra ngưỡng nhắm mắt `ear_threshold` tối ưu riêng, triệt tiêu 100% tình trạng bị báo nhầm buồn ngủ.
+> 3. **Tự động lưu vĩnh viễn:** Sau khi hết 2 phút, AI sẽ tự động ghi nhớ cấu hình vào máy. Từ các buổi học sau trở đi, bạn mở app lên là học ngay lập tức, không bao giờ cần phải chỉnh lại nữa!
 
 #### Bước 3: Học bài & Kỷ luật tự giác
 Trong quá trình học, AI sẽ âm thầm giám sát:
