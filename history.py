@@ -97,14 +97,15 @@ class SessionHistoryManager:
                 except OSError:
                     pass
 
-    def save_session(self, start_time, end_time, focus_score, phone_events, distraction_events, drowsy_events, pomo_cycles, web_events=0):
+    def save_session(self, start_time, end_time, focus_score, phone_events, distraction_events, drowsy_events, pomo_cycles, web_events=0, active_study_seconds=None):
         """Lưu lại một phiên học hoàn chỉnh"""
         duration_sec = int(end_time - start_time)
-        if duration_sec < 10:
-            # Bỏ qua phiên quá ngắn (< 10 giây)
+        if duration_sec < 45:
+            # Bỏ qua phiên quá ngắn (< 45 giây) để không làm loãng dữ liệu lịch sử và streak
             return None
 
-        mins = round(duration_sec / 60.0, 1)
+        study_sec = int(active_study_seconds) if active_study_seconds is not None else duration_sec
+        mins = round(study_sec / 60.0, 1)
         start_dt = datetime.fromtimestamp(start_time).strftime("%Y-%m-%d %H:%M:%S")
         end_dt = datetime.fromtimestamp(end_time).strftime("%Y-%m-%d %H:%M:%S")
         date_str = datetime.fromtimestamp(start_time).strftime("%Y-%m-%d")
@@ -116,6 +117,7 @@ class SessionHistoryManager:
             "end_time": end_dt,
             "duration_minutes": mins,
             "duration_seconds": duration_sec,
+            "active_study_seconds": study_sec,
             "focus_score": round(focus_score, 1),
             "phone_events": phone_events,
             "web_events": web_events,
@@ -136,11 +138,19 @@ class SessionHistoryManager:
         if not sessions:
             return 0, 0
 
-        unique_dates = sorted(list(set(s.get("date") for s in sessions if "date" in s)))
-        if not unique_dates:
+        # Chỉ tính những ngày có tổng thời lượng học tập tích lũy >= 120 giây (2 phút)
+        daily_study_seconds = {}
+        for s in sessions:
+            d = s.get("date")
+            if d:
+                dur = float(s.get("active_study_seconds", s.get("duration_seconds", s.get("duration_minutes", 0) * 60)))
+                daily_study_seconds[d] = daily_study_seconds.get(d, 0.0) + dur
+
+        qualifying_dates = sorted([d for d, sec in daily_study_seconds.items() if sec >= 120.0])
+        if not qualifying_dates:
             return 0, 0
 
-        date_objs = [datetime.strptime(d, "%Y-%m-%d").date() for d in unique_dates]
+        date_objs = [datetime.strptime(d, "%Y-%m-%d").date() for d in qualifying_dates]
         
         # Tính chuỗi hiện tại
         today = datetime.now().date()
@@ -191,13 +201,22 @@ class SessionHistoryManager:
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         total_mins = sum(s.get("duration_minutes", 0) for s in sessions)
-        total_scores = [s.get("focus_score", 100) for s in sessions]
-        avg_score = round(sum(total_scores) / len(total_scores), 1) if total_scores else 100.0
+
+        # Điểm trung bình có trọng số theo thời lượng (Duration-weighted average score)
+        # sum(score * duration) / sum(duration)
+        total_weight_sec = sum(max(1.0, float(s.get("active_study_seconds", s.get("duration_seconds", s.get("duration_minutes", 0) * 60)))) for s in sessions)
+        if total_weight_sec > 0:
+            avg_score = round(sum(float(s.get("focus_score", 100)) * max(1.0, float(s.get("active_study_seconds", s.get("duration_seconds", s.get("duration_minutes", 0) * 60)))) for s in sessions) / total_weight_sec, 1)
+        else:
+            avg_score = 100.0
 
         today_sessions = [s for s in sessions if s.get("date") == today_str]
         today_mins = sum(s.get("duration_minutes", 0) for s in today_sessions)
-        today_scores = [s.get("focus_score", 100) for s in today_sessions]
-        today_avg = round(sum(today_scores) / len(today_scores), 1) if today_scores else 100.0
+        today_weight_sec = sum(max(1.0, float(s.get("active_study_seconds", s.get("duration_seconds", s.get("duration_minutes", 0) * 60)))) for s in today_sessions)
+        if today_weight_sec > 0:
+            today_avg = round(sum(float(s.get("focus_score", 100)) * max(1.0, float(s.get("active_study_seconds", s.get("duration_seconds", s.get("duration_minutes", 0) * 60)))) for s in today_sessions) / today_weight_sec, 1)
+        else:
+            today_avg = 100.0
         today_goal_pct = min(100.0, round((today_mins / max(1, self.daily_goal_mins)) * 100.0, 1))
 
         total_phone = sum(s.get("phone_events", 0) for s in sessions)

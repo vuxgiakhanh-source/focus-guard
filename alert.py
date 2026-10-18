@@ -16,8 +16,10 @@ class SoundAlertManager:
         self.sounds_dir = sounds_dir
         self.volume = max(0.0, min(1.0, volume))
         self.is_playing = False
-        self.last_alert_time = 0
+        self.last_alert_time = 0.0
         self.lock = threading.Lock()
+        self._current_worker = None
+        self._stop_requested = False
 
         if USE_PYGAME:
             try:
@@ -50,7 +52,7 @@ class SoundAlertManager:
                 pass
 
     def play_voice(self, alert_type, cooldown=3.5, force=False):
-        """Phát giọng nói cảnh báo trên luồng nền"""
+        """Phát giọng nói cảnh báo trên luồng nền, đảm bảo an toàn đa luồng không chồng lấn"""
         now = time.monotonic()
         if not force and (now - self.last_alert_time < cooldown):
             return
@@ -58,18 +60,42 @@ class SoundAlertManager:
         with self.lock:
             if self.is_playing and not force:
                 return
+
+            self._stop_requested = True
+            if USE_PYGAME:
+                try:
+                    pygame.mixer.music.stop()
+                except Exception:
+                    pass
+
+            prev_worker = self._current_worker
             self.is_playing = True
+            self._stop_requested = False
             self.last_alert_time = now
+
+        # Nếu có luồng cũ đang chạy, đợi luồng cũ dừng hẳn trước khi nạp bài mới
+        if prev_worker and prev_worker.is_alive() and prev_worker != threading.current_thread():
+            prev_worker.join(timeout=0.15)
 
         def _worker():
             try:
                 audio_path = self.voice_map.get(alert_type)
                 if USE_PYGAME and audio_path and os.path.exists(audio_path):
-                    pygame.mixer.music.load(audio_path)
-                    pygame.mixer.music.set_volume(self.volume)
-                    pygame.mixer.music.play()
-                    while pygame.mixer.music.get_busy():
-                        time.sleep(0.06)
+                    with self.lock:
+                        if self._stop_requested:
+                            return
+                        pygame.mixer.music.load(audio_path)
+                        pygame.mixer.music.set_volume(self.volume)
+                        pygame.mixer.music.play()
+
+                    while True:
+                        with self.lock:
+                            if self._stop_requested:
+                                break
+                            busy = pygame.mixer.music.get_busy()
+                        if not busy:
+                            break
+                        time.sleep(0.05)
                 else:
                     freq = 1600 if alert_type == "DROWSY" else 1100
                     winsound.Beep(freq, 400)
@@ -80,9 +106,13 @@ class SoundAlertManager:
                     pass
             finally:
                 with self.lock:
-                    self.is_playing = False
+                    if self._current_worker == threading.current_thread():
+                        self.is_playing = False
 
-        threading.Thread(target=_worker, daemon=True).start()
+        worker = threading.Thread(target=_worker, name="FocusGuard-AudioWorker", daemon=True)
+        with self.lock:
+            self._current_worker = worker
+        worker.start()
 
     def stop(self, min_play_sec=1.2, fade_ms=250):
         """
@@ -97,6 +127,8 @@ class SoundAlertManager:
             if min_play_sec > 0 and (now - self.last_alert_time < min_play_sec):
                 # Đang phát câu thoại ngắn, cho phép phát trọn vẹn không bị ngắp ngứ
                 return
+            self._stop_requested = True
+            self.is_playing = False
 
         if USE_PYGAME:
             try:
@@ -106,5 +138,3 @@ class SoundAlertManager:
                     pygame.mixer.music.stop()
             except Exception:
                 pass
-        with self.lock:
-            self.is_playing = False

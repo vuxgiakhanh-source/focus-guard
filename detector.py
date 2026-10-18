@@ -11,7 +11,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 ZONE_FILE = "study_zone.json"
-FACE_INFERENCE_INTERVAL_SEC = 1.0
+FACE_INFERENCE_INTERVAL_SEC = 0.5
 FACE_DETECTION_TTL_SEC = 2.5
 FACE_INFERENCE_SCALE = 0.75
 
@@ -93,7 +93,7 @@ class FocusDetector:
         self.drowsy_limit_sec = drowsy_limit_sec
         self.distracted_limit_sec = distracted_limit_sec
         self.away_limit_sec = away_limit_sec
-        self.writing_grace_sec = 45.0        # Ân hạn 45s khi cúi đầu viết bài mà không bao giờ bị báo rời bàn
+        self.writing_grace_sec = 18.0        # Ân hạn 18s khi cúi đầu viết bài trước khi kiểm tra ngủ gục
         self.last_seen_pitch = 0.0
         self.last_seen_reading = False
 
@@ -454,17 +454,23 @@ class FocusDetector:
         self.is_recording_zone = False
         n_samples = len(self.recorded_samples.get("yaw", []))
 
-        if n_samples >= 8:
+        if n_samples >= 4:
             yaws = np.array(self.recorded_samples["yaw"])
             pitches = np.array(self.recorded_samples["pitch"])
             rolls = np.array(self.recorded_samples["roll"])
             ears = np.array(self.recorded_samples["ear"])
 
-            # Sử dụng phân vị 5th & 95th để loại bỏ nhiễu/outlier
-            yaw_p05 = float(np.percentile(yaws, 5))
-            yaw_p95 = float(np.percentile(yaws, 95))
-            pitch_p05 = float(np.percentile(pitches, 5))
-            pitch_p95 = float(np.percentile(pitches, 95))
+            # Sử dụng phân vị 5th & 95th nếu đủ mẫu (>= 8), hoặc min/max nếu chốt sớm (4-7 mẫu)
+            if n_samples >= 8:
+                yaw_p05 = float(np.percentile(yaws, 5))
+                yaw_p95 = float(np.percentile(yaws, 95))
+                pitch_p05 = float(np.percentile(pitches, 5))
+                pitch_p95 = float(np.percentile(pitches, 95))
+            else:
+                yaw_p05 = float(np.min(yaws))
+                yaw_p95 = float(np.max(yaws))
+                pitch_p05 = float(np.min(pitches))
+                pitch_p95 = float(np.max(pitches))
 
             # Mở rộng biên an toàn:
             # - Yaw: ít nhất [-45°, +45°], hoặc mở rộng theo góc quay thực tế của người dùng + 15°
@@ -491,7 +497,8 @@ class FocusDetector:
             self.is_study_zone_set = True
             self.save_study_zone()
 
-            msg = f"ĐÃ LƯU KHUNG HỌC: Quay [{final_yaw_min:+.0f}°, {final_yaw_max:+.0f}°] | Cúi {final_pitch_min:+.0f}° | Mắt {self.ear_threshold:.2f} ✓"
+            tag = " (CHỐT SỚM)" if n_samples < 8 else ""
+            msg = f"ĐÃ LƯU KHUNG HỌC{tag}: Quay [{final_yaw_min:+.0f}°, {final_yaw_max:+.0f}°] | Cúi {final_pitch_min:+.0f}° | Mắt {self.ear_threshold:.2f} ✓"
             self.last_calib_msg = msg
             try:
                 print(f"[+] [KHUNG HOC] {msg}")
@@ -499,11 +506,11 @@ class FocusDetector:
                 pass
             return msg
         else:
-            # Nếu chưa đủ mẫu, dùng quick_calibrate dự phòng khi vẫn còn dữ liệu mặt mới
+            # Nếu chưa đủ mẫu (< 4 mẫu do dừng quá nhanh), dùng quick_calibrate dự phòng
             if self.last_detection_data is not None:
                 msg = self.quick_calibrate()
-                self.last_calib_msg = msg
-                return msg
+                self.last_calib_msg = f"{msg} (Dừng nhanh < 4 mẫu)"
+                return self.last_calib_msg
             else:
                 msg = "⚠️ Chưa bắt đủ khuôn mặt, đã giữ khung học an toàn hiện tại!"
                 self.last_calib_msg = msg
@@ -790,40 +797,66 @@ class FocusDetector:
                 self.away_start = now
             away_dur = now - self.away_start
 
-            # ĐẶC QUYỀN CÚI VIẾT BÀI: Kiểm tra trước khi khuất mặt người dùng có đang cúi đầu viết bài không?
+            # ĐẶC QUYỀN CÚI VIẾT BÀI vs NGUY CƠ GỤC ĐẦU XUỐNG BÀN NGỦ:
             was_bowed_writing = (self.last_seen_pitch < -16.0 or self.last_seen_reading)
-            if was_bowed_writing and away_dur <= self.writing_grace_sec:
-                # Người học đang cúi thấp đầu viết bài trong vở (camera tạm không bắt được mặt vì đỉnh đầu hướng vào cam)
-                self._update_energy("FOCUSED", now)
-                return {
-                    "status": "FOCUSED",
-                    "label": "● ĐANG CÚI VIẾT BÀI",
-                    "reason": f"Tập trung cúi ghi chép bài vở ({away_dur:.0f}s)",
-                    "alert": False,
-                    "alert_type": None,
-                    "ear": 0.22,
-                    "mar": 0.0,
-                    "pitch": self.last_seen_pitch,
-                    "yaw": 0.0,
-                    "roll": 0.0,
-                    "gaze_ratio": 0.5,
-                    "perclos": 0.0,
-                    "is_reading_desk": True,
-                    "ear_threshold": self.ear_threshold,
-                    "study_zone": self.study_zone,
-                    "is_recording_zone": self.is_recording_zone,
-                    "record_time_left": 0.0,
-                    "is_study_zone_set": self.is_study_zone_set,
-                    "focus_score": self.get_focus_score(),
-                    "landmarks": None
-                }
+            if was_bowed_writing:
+                if away_dur <= self.writing_grace_sec:
+                    # Giai đoạn 1 (<= 18s): Đang cúi thấp đầu viết bài trong vở
+                    self._update_energy("FOCUSED", now)
+                    return {
+                        "status": "FOCUSED",
+                        "label": "● ĐANG CÚI VIẾT BÀI",
+                        "reason": f"Tập trung cúi ghi chép bài vở ({away_dur:.0f}s)",
+                        "alert": False,
+                        "alert_type": None,
+                        "ear": 0.22,
+                        "mar": 0.0,
+                        "pitch": self.last_seen_pitch,
+                        "yaw": 0.0,
+                        "roll": 0.0,
+                        "gaze_ratio": 0.5,
+                        "perclos": 0.0,
+                        "is_reading_desk": True,
+                        "ear_threshold": self.ear_threshold,
+                        "study_zone": self.study_zone,
+                        "is_recording_zone": self.is_recording_zone,
+                        "record_time_left": 0.0,
+                        "is_study_zone_set": self.is_study_zone_set,
+                        "focus_score": self.get_focus_score(),
+                        "landmarks": None
+                    }
+                elif away_dur <= 50.0:
+                    # Giai đoạn 2 (18s - 50s): Cúi gục đầu quá lâu không thấy mặt -> CẢNH BÁO BUỒN NGỦ / NGỦ GẬT TRÊN BÀN!
+                    self._update_energy("DROWSY", now)
+                    return {
+                        "status": "DROWSY",
+                        "label": "GỤC XUỐNG BÀN / NGỦ GẬT?",
+                        "reason": f"Cúi gục đầu quá lâu ({away_dur:.0f}s) không thấy mặt!",
+                        "alert": True,
+                        "alert_type": "DROWSY",
+                        "ear": 0.10,
+                        "mar": 0.0,
+                        "pitch": self.last_seen_pitch,
+                        "yaw": 0.0,
+                        "roll": 0.0,
+                        "gaze_ratio": 0.5,
+                        "perclos": 0.0,
+                        "is_reading_desk": True,
+                        "ear_threshold": self.ear_threshold,
+                        "study_zone": self.study_zone,
+                        "is_recording_zone": self.is_recording_zone,
+                        "record_time_left": 0.0,
+                        "is_study_zone_set": self.is_study_zone_set,
+                        "focus_score": self.get_focus_score(),
+                        "landmarks": None
+                    }
+                # Giai đoạn 3 (> 50s): Rơi xuống nhánh rời khỏi bàn / ngủ quên bên dưới
 
-            limit_sec = self.writing_grace_sec if was_bowed_writing else self.away_limit_sec
-            should_alert = away_dur > limit_sec
+            should_alert = away_dur > self.away_limit_sec
             self._update_energy("AWAY" if should_alert else "WARNING", now)
             return {
                 "status": "AWAY",
-                "label": "RỜI KHỎI BÀN",
+                "label": "RỜI KHỎI BÀN" if not was_bowed_writing else "RỜI BÀN HOẶC NGỦ GỤC",
                 "reason": f"Không thấy khuôn mặt ({away_dur:.1f}s)",
                 "alert": should_alert,
                 "alert_type": "AWAY" if should_alert else None,
@@ -959,9 +992,6 @@ class FocusDetector:
                             "roll_min": -40.0,
                             "roll_max": 40.0
                         }
-                        if new_ear >= 0.14:
-                            self.ear_threshold = max(0.12, min(0.22, round(new_ear * 0.68, 2)))
-
                         self.save_study_zone()
                         self.last_auto_adapt_time = now
                         self.camera_shifted_time = 0.0

@@ -155,15 +155,15 @@ class AppDistractionMonitor:
                 d_label = "Facebook"
             elif any(re.search(p, t_low) for p in yt_patterns):
                 # Ngoại lệ thông minh: Cho phép nghe Lofi hoặc xem BÀI GIẢNG / TUTORIAL trên YouTube
-                educational_yt_keywords = [
-                    "tutorial", "học", "bài giảng", "lecture", "course", "hướng dẫn",
-                    "ôn thi", "toán", "văn", "tiếng anh", "ielts", "toeic", "lập trình",
-                    "coding", "programming", "python", "khoa học", "lịch sử", "địa lý", "vật lý",
-                    "hóa học", "sinh học", "khan academy", "coursera", "edx", "mit opencourseware",
-                    "crash course", "study with me", "lofi hip hop", "lofi study", "nhạc tập trung",
-                    "music.youtube"
+                educational_yt_patterns = [
+                    r'\b(toán\s+học|môn\s+toán|đại\s+số|hình\s+học|giải\s+tích|ngữ\s+văn|môn\s+văn|tiếng\s+anh|ielts|toeic|toefl)\b',
+                    r'\b(vật\s+lý|hóa\s+học|sinh\s+học|lịch\s+sử|địa\s+lý|tin\s+học|khoa\s+học|triết\s+học)\b',
+                    r'\b(bài\s+giảng|giáo\s+trình|ôn\s+thi|luyện\s+thi|hướng\s+dẫn|tự\s+học|study\s+with\s+me)\b',
+                    r'\b(tutorial|lecture|online\s+course|crash\s+course|khan\s+academy|coursera|edx|mit\s+opencourseware)\b',
+                    r'\b(lập\s+trình|coding|programming|python|javascript|c\+\+|golang|rust|react|fullstack)\b',
+                    r'\b(lofi\s+hip\s+hop|lofi\s+study|nhạc\s+tập\s+trung|music\.youtube)\b'
                 ]
-                if any(kw in t_low for kw in educational_yt_keywords):
+                if any(re.search(p, t_low) for p in educational_yt_patterns):
                     # Đang xem video bài giảng hoặc nhạc học bài -> Bỏ qua không báo động!
                     self.active_operate_time = 0.0
                     self.current_distraction = None
@@ -174,9 +174,9 @@ class AppDistractionMonitor:
             elif any(re.search(p, t_low) for p in tiktok_patterns):
                 d_type = "WEB_DISTRACT"
                 d_label = "TikTok"
-            elif any(k in t_low for k in ["bilibili", "netflix.com", "shopee.vn", "lazada.vn", "instagram.com", "discord", "telegram", "twitch.tv", "reddit.com", "threads.net"]):
+            elif re.search(r'\b(bilibili|netflix|shopee|lazada|instagram|discord|telegram|twitch|reddit|threads|twitter|weibo|pinterest)\b', t_low):
                 d_type = "WEB_DISTRACT"
-                d_label = "Mạng xã hội / Giải trí"
+                d_label = "Mạng xã hội / Mua sắm / Giải trí"
 
         # Nếu cửa sổ hiện tại KHÔNG PHẢI mạng xã hội -> Reset ngay lập tức
         if not d_type:

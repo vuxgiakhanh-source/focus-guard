@@ -78,6 +78,56 @@ def enforce_single_instance(force_restart=False):
     kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
     kernel32.GetLastError.restype = ctypes.c_ulong
 
+    # 1. BƯỚC QUAN TRỌNG NHẤT: Thử chiếm Mutex trước tiên để loại bỏ 100% race condition
+    _instance_mutex = kernel32.CreateMutexW(None, False, mutex_name)
+    last_error = kernel32.GetLastError()
+
+    if last_error == ERROR_ALREADY_EXISTS:
+        # Đã có một instance khác đang chạy hoặc đang trong quá trình khởi động
+        if not force_restart:
+            # Thử tìm cửa sổ của phiên đang chạy (chờ tối đa 1.5s nếu phiên đó đang khởi động)
+            for _ in range(10):
+                hwnd = user32.FindWindowW(None, WIN_TITLE)
+                if hwnd:
+                    user32.ShowWindow(hwnd, 9)
+                    user32.SetForegroundWindow(hwnd)
+                    print("[*] FocusGuard đang hoạt động. Đã đưa cửa sổ lên trước.")
+                    break
+                time.sleep(0.15)
+            sys.exit(0)
+        else:
+            # Yêu cầu khởi động lại ép buộc (--restart)
+            if _instance_mutex:
+                kernel32.CloseHandle(_instance_mutex)
+                _instance_mutex = None
+
+            hwnd = user32.FindWindowW(None, WIN_TITLE)
+            if hwnd:
+                user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+                time.sleep(1.0)
+
+            if psutil is not None:
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        info = proc.info
+                        if info['pid'] == my_pid or 'python' not in (info['name'] or '').lower():
+                            continue
+                        cmdline = info.get('cmdline') or []
+                        for arg in cmdline:
+                            candidate = arg.strip('"')
+                            if candidate.lower().endswith('.py') and os.path.normcase(os.path.abspath(candidate)) == target_script:
+                                proc.kill()
+                                proc.wait(timeout=2)
+                                break
+                    except Exception:
+                        continue
+
+            time.sleep(0.5)
+            _instance_mutex = kernel32.CreateMutexW(None, False, mutex_name)
+            return
+
+    # 2. CHÚNG TA ĐÃ NẮM GIỮ MUTEX ĐỘC QUYỀN:
+    # Quét dọn các tiến trình zombie/treo không có cửa sổ từ các phiên cũ bị crash trước đó
     if psutil is not None:
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
@@ -102,45 +152,11 @@ def enforce_single_instance(force_restart=False):
                 if not is_target:
                     continue
 
-                hwnd = user32.FindWindowW(None, WIN_TITLE)
-                if hwnd and not force_restart:
-                    user32.ShowWindow(hwnd, 9)
-                    user32.SetForegroundWindow(hwnd)
-                    print(f"[*] FocusGuard đang hoạt động (PID: {info['pid']}). Đã đưa cửa sổ lên trước.")
-                    sys.exit(0)
-
-                if hwnd and force_restart:
-                    # Cho phiên hiện tại thoát qua luồng bình thường để lưu lịch sử trước.
-                    user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
-                    try:
-                        proc.wait(timeout=5)
-                    except psutil.TimeoutExpired:
-                        print(f"[!] FocusGuard chưa thoát sau 5 giây; kết thúc PID {info['pid']}.")
-                        proc.kill()
-                        proc.wait(timeout=2)
-                else:
-                    print(f"[*] Đang dọn tiến trình FocusGuard không có cửa sổ (PID: {info['pid']})...")
-                    proc.kill()
-                    proc.wait(timeout=2)
-                time.sleep(0.2)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
-                continue
+                print(f"[*] Đang dọn tiến trình FocusGuard zombie cũ (PID: {info['pid']})...")
+                proc.kill()
+                proc.wait(timeout=2)
             except Exception:
                 continue
-
-    # Mutex giải quyết trường hợp hai launcher chạy đồng thời trước khi có cửa sổ.
-    try:
-        _instance_mutex = kernel32.CreateMutexW(None, False, mutex_name)
-        last_error = kernel32.GetLastError()
-        if last_error == ERROR_ALREADY_EXISTS:
-            hwnd = user32.FindWindowW(None, WIN_TITLE)
-            if hwnd:
-                user32.ShowWindow(hwnd, 9)
-                user32.SetForegroundWindow(hwnd)
-            # Một tiến trình đã giữ mutex, dù cửa sổ của nó chưa dựng xong.
-            sys.exit(0)
-    except Exception:
-        pass
 
 def cleanup_single_instance():
     global _instance_mutex
@@ -241,6 +257,8 @@ def run_focus_guard():
     print(f"[*] {streak_msg}")
 
     start_time = time.time()
+    active_study_sec = 0.0
+    last_study_tick = time.monotonic()
     is_muted = False
     show_stats = False
     stats_data = None
@@ -297,7 +315,7 @@ def run_focus_guard():
                 alert_mgr.play_voice("BREAK_END", force=True)
                 print("[*] POMODORO: Hết giờ nghỉ! Bắt đầu buổi học tiếp theo!")
     
-            is_break = (pomo_state == "BREAK")
+            is_break = pomodoro.is_active and (pomo_state == "BREAK")
             frame_interval = 1.0 / (BREAK_TARGET_FPS if is_break else TARGET_FPS)
     
             # 2. Quét điện thoại ngầm bằng YOLOv8 (Tự động ngủ 100% trong giờ giải lao để làm mát máy)
@@ -345,6 +363,12 @@ def run_focus_guard():
     
             focus_score_sum += float(result.get("focus_score", detector.get_focus_score()))
             focus_score_samples += 1
+
+            now_mono = time.monotonic()
+            frame_dt = max(0.0, min(1.0, now_mono - last_study_tick))
+            last_study_tick = now_mono
+            if not is_break and result.get("status") not in ["AWAY", "BREAK"]:
+                active_study_sec += frame_dt
     
             # Theo dõi chuyển trạng thái của quá trình xác định khung học
             is_rec = result.get("is_recording_zone", False)
@@ -496,6 +520,8 @@ def run_focus_guard():
                 detector.reset_focus_score()
                 hud.score_history = [100.0, 100.0]
                 start_time = time.time()
+                active_study_sec = 0.0
+                last_study_tick = time.monotonic()
                 pomodoro.reset()
                 phone_events = web_events = distraction_events = drowsy_events = 0
                 last_alert_state = False
@@ -547,7 +573,8 @@ def run_focus_guard():
                 distraction_events=distraction_events,
                 drowsy_events=drowsy_events,
                 pomo_cycles=pomodoro.completed_cycles,
-                web_events=web_events
+                web_events=web_events,
+                active_study_seconds=active_study_sec
             )
             history_mgr.print_report(saved_session)
         except Exception as e_save:
