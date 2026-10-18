@@ -482,8 +482,8 @@ class FocusDetector:
         is_turned_away = is_turned_left or is_turned_right
         is_inside_study_zone = not is_turned_away
 
-        # Gaze tracking: Chỉ cảnh báo khi liếc mắt quá mạnh sang phải (> 0.82)
-        is_gaze_diverted = (gaze_ratio > 0.82)
+        # Gaze tracking: Chỉ cảnh báo khi đầu đang thẳng nhưng liếc mắt quá mạnh sang hai bên
+        is_gaze_diverted = (gaze_ratio > 0.82 or gaze_ratio < 0.18) and abs(yaw) < 25.0
         is_eyes_closed = avg_ear < self.ear_threshold
         is_yawning = mar > 0.70
 
