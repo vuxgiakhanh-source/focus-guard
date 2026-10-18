@@ -108,22 +108,17 @@ class FocusDetector:
         self.ear_history = []
         self.perclos_val = 0.0
 
-        # Vùng học tập mặc định linh hoạt cho mọi người dùng
+        # Vùng học tập mặc định siêu rộng - dùng ngay lập tức không cần bắt buộc căn chỉnh
         self.study_zone = {
-            "yaw_min": -60.0,
-            "yaw_max": 60.0,
-            "pitch_min": -65.0,
-            "pitch_max": 55.0,
-            "roll_min": -50.0,
-            "roll_max": 50.0
+            "yaw_min": -65.0,
+            "yaw_max": 65.0,
+            "pitch_min": -70.0,
+            "pitch_max": 35.0,
+            "roll_min": -40.0,
+            "roll_max": 40.0
         }
-        self.is_study_zone_set = False
-
-        # Học vùng học tập (Calibration 2 phút / 120s) & Tự động cân chỉnh EAR
+        self.is_study_zone_set = True
         self.is_recording_zone = False
-        self.record_start_time = 0
-        self.record_duration = 120.0
-        self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
 
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"Không tìm thấy file model: {self.model_path}")
@@ -216,55 +211,45 @@ class FocusDetector:
         except Exception:
             pass
 
+    def quick_calibrate(self):
+        """
+        Căn chỉnh tâm góc học tập & đo mắt NGAY LẬP TỨC trong 0.1s:
+        Lấy vị trí ngồi và góc nhìn tự nhiên hiện tại làm tâm chuẩn (Anchor)
+        và tự động mở rộng vùng an toàn 60 độ về mỗi phía.
+        """
+        if self.last_detection_data is None:
+            return "Không thấy mặt để lấy tâm! Vui lòng nhìn thẳng vào webcam."
+
+        data = self.last_detection_data
+        cur_yaw = float(data.get("yaw", 0.0))
+        cur_ear = float(data.get("ear", 0.22))
+
+        # Đặt tâm góc quay ngang quanh góc ngồi thực tế của người dùng
+        self.study_zone = {
+            "yaw_min": round(cur_yaw - 60.0, 1),
+            "yaw_max": round(cur_yaw + 60.0, 1),
+            "pitch_min": -70.0,
+            "pitch_max": 35.0,
+            "roll_min": -40.0,
+            "roll_max": 40.0
+        }
+
+        # Hiệu chuẩn ngưỡng nhắm mắt theo kích thước mắt thực tế
+        if cur_ear >= 0.14:
+            self.ear_threshold = max(0.12, min(0.22, round(cur_ear * 0.68, 2)))
+
+        self.is_study_zone_set = True
+        self.save_study_zone()
+        print(f"[+] Đã đặt tâm góc học ({cur_yaw:+.0f}°) & cân chỉnh EAR ({self.ear_threshold:.2f}) tức thì!")
+        return f"ĐÃ LƯU TÂM CHUẨN GÓC HỌC ({cur_yaw:+.0f}°) & MẮT ({self.ear_threshold:.2f}) XONG! ✓"
+
+    def start_zone_learning(self, duration=0.0):
+        """Tương thích ngược: Lập tức thực hiện quick_calibrate không cần chờ 2 phút"""
+        return self.quick_calibrate()
+
     def finalize_zone_learning(self):
-        if len(self.recorded_samples["yaw"]) > 10:
-            yaw_samples = np.array(self.recorded_samples["yaw"])
-            pitch_samples = np.array(self.recorded_samples["pitch"])
-            roll_samples = np.array(self.recorded_samples["roll"])
-            ear_samples = np.array(self.recorded_samples["ear"])
-
-            # Sử dụng phân vị 2% và 98% chống ngoại lai (Outlier-resistant Percentiles)
-            yaw_p02 = float(np.percentile(yaw_samples, 2))
-            yaw_p98 = float(np.percentile(yaw_samples, 98))
-            pitch_p02 = float(np.percentile(pitch_samples, 2))
-            pitch_p98 = float(np.percentile(pitch_samples, 98))
-            roll_p02 = float(np.percentile(roll_samples, 2))
-            roll_p98 = float(np.percentile(roll_samples, 98))
-
-            learned_yaw_min = round(yaw_p02 - 15.0, 1)
-            learned_yaw_max = round(yaw_p98 + 15.0, 1)
-
-            final_yaw_min = min(-45.0, learned_yaw_min)
-            final_yaw_max = max(45.0, learned_yaw_max)
-
-            self.study_zone = {
-                "yaw_min": final_yaw_min,
-                "yaw_max": final_yaw_max,
-                "pitch_min": round(pitch_p02 - 15.0, 1),
-                "pitch_max": round(pitch_p98 + 15.0, 1),
-                "roll_min": round(roll_p02 - 15.0, 1),
-                "roll_max": round(roll_p98 + 15.0, 1)
-            }
-
-            if len(ear_samples) > 10:
-                open_eye_baseline = float(np.median(ear_samples))
-                calibrated_threshold = max(0.12, min(0.22, round(open_eye_baseline * 0.68, 2)))
-                self.ear_threshold = calibrated_threshold
-                print(f"[+] Tự động cân chỉnh EAR: Mắt mở {open_eye_baseline:.2f} -> Ngưỡng nhắm: {self.ear_threshold}")
-
-            self.is_study_zone_set = True
-            self.save_study_zone()
-        self.is_recording_zone = False
-
-    def start_zone_learning(self, duration=120.0):
-        if self.is_recording_zone:
-            if len(self.recorded_samples["yaw"]) > 30:
-                self.finalize_zone_learning()
-                return
-        self.is_recording_zone = True
-        self.record_start_time = time.time()
-        self.record_duration = duration
-        self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
+        """Tương thích ngược"""
+        return self.quick_calibrate()
 
     def check_lighting(self, frame_bgr):
         now = time.time()
@@ -562,46 +547,7 @@ class FocusDetector:
         roll = data["roll"]
         gaze_ratio = data["gaze_ratio"]
 
-        # 5. NẾU ĐANG TRONG CHẾ ĐỘ HỌC GÓC HỌC TẬP (120 GIÂY)
-        record_time_left = 0.0
-        if self.is_recording_zone:
-            self.focused_frames += 1
-            self.recorded_samples["yaw"].append(yaw)
-            self.recorded_samples["pitch"].append(pitch)
-            self.recorded_samples["roll"].append(roll)
-            self.recorded_samples["ear"].append(avg_ear)
-
-            elapsed = now - self.record_start_time
-            record_time_left = max(0.0, self.record_duration - elapsed)
-
-            if elapsed >= self.record_duration:
-                self.finalize_zone_learning()
-
-            self._update_energy("CALIBRATING", now)
-            return {
-                "status": "CALIBRATING",
-                "label": "ĐANG HỌC GÓC HỌC TẬP (2 PHÚT)",
-                "reason": f"Cố gắng tập trung tối đa trong 2 phút này... ({int(record_time_left)}s)",
-                "alert": False,
-                "alert_type": None,
-                "ear": avg_ear,
-                "mar": mar,
-                "pitch": pitch,
-                "yaw": yaw,
-                "roll": roll,
-                "gaze_ratio": gaze_ratio,
-                "perclos": 0.0,
-                "is_reading_desk": False,
-                "ear_threshold": self.ear_threshold,
-                "study_zone": self.study_zone,
-                "is_recording_zone": True,
-                "record_time_left": record_time_left,
-                "is_study_zone_set": self.is_study_zone_set,
-                "focus_score": self.get_focus_score(),
-                "landmarks": landmarks
-            }
-
-        # 6. NHẬN DIỆN TƯ THẾ HỌC ĐỌC SÁCH / GHI CHÉP VỞ (DESK READING MODE)
+        # 5. NHẬN DIỆN TƯ THẾ HỌC ĐỌC SÁCH / GHI CHÉP VỞ (DESK READING MODE)
         # Khi cúi đầu nhìn xuống sách/vở trên bàn: pitch âm từ -8° tới -70°, góc quay yaw lên tới 55°
         self.last_seen_pitch = pitch
         is_reading_desk = (-70.0 <= pitch <= -8.0) and (abs(yaw) <= 55.0) and not has_phone

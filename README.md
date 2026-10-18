@@ -43,8 +43,8 @@
    * Điện thoại dựng trên kệ sạc hoặc nằm yên trên bàn: Hiện hộp màu vàng lam `DIEN THOAI (TREN BAN)`, **không báo động, không trừ điểm**.
    * Chỉ khi nhấc điện thoại lên tay hoặc vuốt màn hình: Hộp đỏ cảnh báo lập tức xuất hiện và nhắc nhở.
 
-3. **📚 Chế Độ Đọc Sách / Viết Bài (Desk Reading Mode):**
-   * Khi cúi đầu nhìn vở trên bàn ($-38° \le \text{pitch} \le -8°$), AI chuyển sang chế độ `● ĐANG ĐỌC / VIẾT BÀI`, tự động hạ ngưỡng EAR và bỏ qua đảo mắt để bạn tập trung làm bài thi mà không bao giờ bị làm phiền.
+3. **📚 Chế Độ Đọc Sách / Cúi Viết Bài (Desk Reading & Writing Mode):**
+   * Khi cúi đầu làm bài hoặc viết bài trên bàn ($-70° \le \text{pitch} \le -8°$), AI lập tức nhận diện `● ĐANG ĐỌC / VIẾT BÀI`, tự động hạ ngưỡng EAR và hỗ trợ cơ chế đệm 40 giây khi cúi sâu mất dấu mặt do tóc/trán che khuất. Không bao giờ báo sai khi đang chăm chỉ làm bài tập.
 
 4. **👁 Đo Độ Nhắm Mắt Chuẩn NHTSA PERCLOS & Micro-sleep:**
    * Tính toán tỷ lệ mắt nhắm trong cửa sổ trượt 12 giây kết hợp bộ đếm vi giấc ngủ (Micro-sleep > 2.6s). Người đeo kính gọng dày hay mắt híp đều được cân chỉnh riêng biệt.
@@ -114,7 +114,7 @@ Tất cả các chức năng đều hỗ trợ **Click chuột trực tiếp** l
 
 | Nút Bấm Trên Dock | Phím Tắt | Chức Năng |
 | :---: | :---: | :--- |
-| **`[C] Dạy góc`** | **`C`** | Bắt đầu đo góc ngồi học và dáng mắt trong 2 phút (bấm lại để hoàn tất sớm) |
+| **`[C] Đặt tâm`** | **`C`** | Đặt tâm góc ngồi học và cân chỉnh dáng mắt TỨC THÌ trong 0.1s (không phải chờ đợi) |
 | **`[P] Pomodoro`** | **`P`** | Bật / Tắt chu kỳ đếm giờ Pomodoro (25p học / 5p nghỉ / 15p nghỉ dài sau 4 hiệp) |
 | **`[H] Thống kê`** | **`H`** | Bật / Tắt bảng vàng thống kê thành tích, chuỗi ngày học (Daily Streak) |
 | **`[M] Âm thanh`** | **`M`** | Tắt / Mở âm thanh giọng nói cảnh báo (hữu ích khi ngồi thư viện) |

@@ -81,7 +81,7 @@ class HUDRenderer:
         mute_text_col = (255, 160, 200) if is_muted else (210, 180, 255)
 
         buttons_def = [
-            ("CALIBRATE", 6,   112, "[C] Dạy góc",     (25, 45, 75),  (100, 210, 255)),
+            ("CALIBRATE", 6,   112, "[C] Đặt tâm",     (25, 45, 75),  (100, 210, 255)),
             ("POMODORO",  116, 218, "[P] Pomodoro",    (25, 55, 45),  (110, 240, 175)),
             ("STATS",     222, 324, "[H] Thống kê",    (45, 35, 65),  (210, 180, 255)),
             ("MUTE",      328, 428, f"[M] {mute_label}", mute_bg,     mute_text_col),
@@ -156,7 +156,7 @@ class HUDRenderer:
 
         # ---------------- ĐỊNH VỊ CÁC PANEL THÔNG MINH ----------------
         self.hud_frame_count += 1
-        should_refresh_text = (self.hud_frame_count % 2 == 0) or is_rec or bool(alert_msg) or (self.cached_header is None)
+        should_refresh_text = (self.hud_frame_count % 2 == 0) or bool(alert_msg) or (self.cached_header is None)
 
         # 1. Header nổi góc trên bên trái: x:[12..445], y:[8..52] (433 x 44)
         hx1, hy1, hx2, hy2 = 12, 8, 445, 52
@@ -291,51 +291,19 @@ class HUDRenderer:
         if dock_cached is not None:
             frame[dock_y1:dock_y2, dock_x1:dock_x1 + 616] = dock_cached
 
-        # ================= 5. MODAL HỌC GÓC 2 PHÚT HOẶC CẢNH BÁO FLASH =================
-        if is_rec:
-            time_left = result.get("record_time_left", 0.0)
-            progress = max(0.0, min(1.0, (120.0 - time_left) / 120.0))
-
-            box_w = 560
-            box_h = 128
-            cx1 = w // 2 - box_w // 2
-            cy1 = h // 2 - box_h // 2
-            cx2 = cx1 + box_w
-            cy2 = cy1 + box_h
-
-            rec_roi = frame[cy1:cy2, cx1:cx2]
-            cv2.rectangle(frame, (cx1, cy1), (cx2, cy2), (0, 220, 255), 2)
-            rec_pil = Image.fromarray(cv2.cvtColor(rec_roi, cv2.COLOR_BGR2RGB))
-            d_rec = ImageDraw.Draw(rec_pil)
-            d_rec.rounded_rectangle([0, 0, box_w, box_h], radius=8, fill=(15, 25, 42))
-
-            bar_x1 = 25
-            bar_y = box_h - 22
-            bar_w = box_w - 50
-            d_rec.rounded_rectangle([bar_x1, bar_y, bar_x1 + bar_w, bar_y + 8], radius=4, fill=(45, 60, 80))
-            d_rec.rounded_rectangle([bar_x1, bar_y, bar_x1 + int(bar_w * progress), bar_y + 8], radius=4, fill=(0, 255, 200))
-
-            title = f"● AI ĐANG HỌC GÓC HỌC TẬP & ĐO MẮT (2 PHÚT): Còn {int(time_left)}s ({int(progress*100)}%)"
-            sub1 = "• Cố gắng ngồi học tập trung nhất có thể để AI học chuẩn góc ngồi & dáng mắt!"
-            sub2 = "• Khi đổi bàn học/chuyển chỗ: Chỉ cần bấm [C] để AI tự động học lại góc mới"
-            sub3 = "• Mẹo: Bấm phím [C] thêm lần nữa bất kỳ lúc nào để HOÀN TẤT & LƯU NGAY!"
-
-            d_rec.text((25, 12), title, font=self.get_font(15), fill=(0, 255, 255))
-            d_rec.text((25, 36), sub1, font=self.get_font(12), fill=(255, 225, 90))
-            d_rec.text((25, 56), sub2, font=self.get_font(11), fill=(180, 235, 255))
-            d_rec.text((25, 76), sub3, font=self.get_font(11), fill=(120, 255, 180))
-            rec_roi[:] = cv2.cvtColor(np.array(rec_pil), cv2.COLOR_RGB2BGR)
-
-        elif alert_msg:
-            mx1 = w // 2 - 200
-            my1 = h // 2 - 28
-            mx2 = mx1 + 400
-            my2 = my1 + 56
+        # ================= 5. BANNER CẢNH BÁO TỨC THÌ (FLASH TOAST) =================
+        if alert_msg:
+            box_w = 460
+            box_h = 56
+            mx1 = w // 2 - box_w // 2
+            my1 = h // 2 - box_h // 2
+            mx2 = mx1 + box_w
+            my2 = my1 + box_h
             msg_roi = frame[my1:my2, mx1:mx2]
             msg_pil = Image.fromarray(cv2.cvtColor(msg_roi, cv2.COLOR_BGR2RGB))
             d_msg = ImageDraw.Draw(msg_pil)
-            d_msg.rounded_rectangle([0, 0, 400, 56], radius=6, fill=(20, 95, 45), outline=(255, 255, 255), width=2)
-            d_msg.text((22, 16), alert_msg, font=self.get_font(14), fill=(255, 255, 255))
+            d_msg.rounded_rectangle([0, 0, box_w, box_h], radius=8, fill=(20, 95, 45), outline=(100, 255, 180), width=2)
+            d_msg.text((22, 18), alert_msg, font=self.get_font(13), fill=(255, 255, 255))
             msg_roi[:] = cv2.cvtColor(np.array(msg_pil), cv2.COLOR_RGB2BGR)
 
         elif show_stats and stats_data:
