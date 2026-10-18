@@ -98,7 +98,7 @@ def run_focus_guard():
         print(f"[-] Lỗi khởi tạo mô hình FaceMesh: {e}")
         return
 
-    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.36)
+    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.40)
     alert_mgr = SoundAlertManager()
     hud = HUDRenderer()
     pomodoro = PomodoroTimer(work_min=25, break_min=5)
@@ -270,8 +270,8 @@ def run_focus_guard():
                     cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 205), y1), (0, 0, 255), -1)
                     cv2.putText(frame, f"DIEN THOAI TREN TAY {int(conf*100)}%", (x1 + 6, max(18, y1 - 8)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA)
-                else:
-                    # Điện thoại đặt trên bàn / kệ: Hộp vàng lam an toàn, không báo động
+                elif conf >= 0.52:
+                    # Điện thoại đặt trên bàn / kệ: Chỉ hiển thị nếu độ tin cậy >= 52% (chống vẽ nhầm lên sách vở)
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (210, 180, 0), 2)
                     top_y = max(0, y1 - 24)
                     cv2.rectangle(frame, (x1, top_y), (min(frame.shape[1], x1 + 195), y1), (180, 130, 20), -1)

@@ -397,8 +397,8 @@ class FocusDetector:
 
                 pw = abs(x2 - x1)
                 ph = abs(y2 - y1)
-                # Kích thước hợp lý: max >= 35px, diện tích >= 600px
-                if max(pw, ph) >= 35 and (pw * ph) >= 600:
+                # Kích thước hợp lý: max >= 38px, diện tích >= 1000px
+                if max(pw, ph) >= 38 and (pw * ph) >= 1000:
                     if is_held:
                         has_phone = True
                         break
@@ -550,7 +550,8 @@ class FocusDetector:
         # 5. NHẬN DIỆN TƯ THẾ HỌC ĐỌC SÁCH / GHI CHÉP VỞ (DESK READING MODE)
         # Khi cúi đầu nhìn xuống sách/vở trên bàn: pitch âm từ -8° tới -70°, góc quay yaw lên tới 55°
         self.last_seen_pitch = pitch
-        is_reading_desk = (-70.0 <= pitch <= -8.0) and (abs(yaw) <= 55.0) and not has_phone
+        is_active_phone = has_phone and (self.phone_detected_start is not None) and (now - self.phone_detected_start >= 1.0)
+        is_reading_desk = (-70.0 <= pitch <= -8.0) and (abs(yaw) <= 55.0) and not is_active_phone
         self.last_seen_reading = is_reading_desk
 
         # Vùng học tập cá nhân hóa

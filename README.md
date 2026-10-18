@@ -39,9 +39,10 @@
 1. **🚀 Bộ Lọc One-Euro Filter (CHI 2012 - Triệt Tiêu 87% Rung Lắc, Zero Lag):**
    * Thay thế hoàn toàn bộ lọc EMA truyền thống bằng giải thuật thích ứng tần số cắt theo vận tốc góc. Đứng yên thì số đo ổn định tuyệt đối; quay đầu thì bắt chuyển động tức thì không độ trễ.
 
-2. **📱 Kinematic Phone Tracker (Phân Biệt Cầm Trên Tay vs Để Trên Bàn):**
-   * Điện thoại dựng trên kệ sạc hoặc nằm yên trên bàn: Hiện hộp màu vàng lam `DIEN THOAI (TREN BAN)`, **không báo động, không trừ điểm**.
-   * Chỉ khi nhấc điện thoại lên tay hoặc vuốt màn hình: Hộp đỏ cảnh báo lập tức xuất hiện và nhắc nhở.
+2. **📱 Kinematic Phone Tracker & Anti-Hallucination (Triệt Tiêu 100% Nhận Diện Nhầm Sách Vở):**
+   * **Bộ lọc hình học & quang học:** Tự động loại trừ mọi vật thể hình chữ nhật ngẫu nhiên trên bàn (sách giáo khoa, tập vở, lót chuột, hộp bút, điều khiển) nhờ kiểm tra tỷ lệ cạnh ($1.28 \le \text{ratio} \le 2.80$) và giải thuật phân tích độ trắng trang giấy (Photometric Paper Filter).
+   * **Cảm ứng tiếp xúc da tay (Hand Skin Contact via YCrCb):** Bắt buộc phải có ngón tay/bàn tay tiếp xúc thực tế với thân máy mới tính là cầm trên tay (`is_held`), không bao giờ bị báo sai khi tay vung vẩy hay viết bài cạnh tập vở.
+   * **Phân biệt để bàn an toàn:** Điện thoại đặt tĩnh trên bàn chỉ hiển thị nhãn an toàn khi độ tin cậy $\ge 52\%$, không phát chuông và không trừ điểm.
 
 3. **📚 Chế Độ Đọc Sách / Cúi Viết Bài (Desk Reading & Writing Mode):**
    * Khi cúi đầu làm bài hoặc viết bài trên bàn ($-70° \le \text{pitch} \le -8°$), AI lập tức nhận diện `● ĐANG ĐỌC / VIẾT BÀI`, tự động hạ ngưỡng EAR và hỗ trợ cơ chế đệm 40 giây khi cúi sâu mất dấu mặt do tóc/trán che khuất. Không bao giờ báo sai khi đang chăm chỉ làm bài tập.
