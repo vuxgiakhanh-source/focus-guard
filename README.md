@@ -30,11 +30,10 @@
 
 ## 🌟 Tính Năng Nổi Bật (Key Features)
 
-1. **📐 Tự Do Mọi Góc Camera (Face-Centric Adaptive Mode):**
-   * Không ép bạn phải ngồi cứng đờ hay đặt camera thẳng mặt. Bạn có thể gập mở màn hình laptop, nâng đế tản nhiệt, hay đặt máy ở góc chéo tùy thích.
-   * **Quy tắc vàng:** Chỉ cần camera nhìn thấy khuôn mặt bạn $\rightarrow$ AI tính là đang tập trung học!
-   * **Quay trái thoải mái vô hạn (180°):** Thoải mái nhìn sang sách vở hoặc màn hình phụ bên trái.
-   * **Cảnh báo quay phải > 70°:** Chỉ nhắc nhở khi bạn quay hẳn đầu đi nơi khác xa khỏi bàn học.
+1. **📐 Tự Động Thích Ứng Mọi Setup Bàn Học (Adaptive Study Envelope):**
+   * **Không ép buộc tư thế cứng nhắc hay vị trí đặt camera:** Cho dù bạn đặt sách vở / màn hình phụ ở **bên trái, bên phải hay cả hai bên**, AI sẽ ghi nhận và tự động thích ứng với bàn học riêng của bạn.
+   * **Học góc học tập thông minh 2 phút:** Trong 2 phút khởi tạo, bất kể bạn quay sang đâu để đọc bài hay tra cứu, AI sẽ đo chính xác biên độ góc quay tự nhiên của bạn và cấp thêm đệm tự do 15° để bạn cử động thoải mái mà không lo bị báo nhầm!
+   * **Quy tắc vàng:** Chỉ cần camera nhìn thấy khuôn mặt bạn và trong phạm vi không gian bàn học cá nhân $\rightarrow$ AI tính là bạn đang tập trung học!
 
 2. **📱 Bắt Quả Tang Cầm Điện Thoại (YOLOv8 Nano):**
    * Quét và khoanh khung đỏ kèm tỷ lệ % tin cậy ngay khi phát hiện điện thoại trên tay.

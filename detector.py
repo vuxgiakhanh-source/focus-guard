@@ -55,16 +55,16 @@ class FocusDetector:
         self.smooth_ear = EMASmoother(alpha=0.40)
         self.smooth_gaze = EMASmoother(alpha=0.25)
 
-        # Vùng học tập: Quay trái tự do 100%, quay sang phải >= 70 độ mới tính là mất tập trung
+        # Vùng học tập mặc định linh hoạt cho mọi người dùng (trước khi đo 2 phút)
         self.study_zone = {
-            "yaw_min": -180.0,
-            "yaw_max": 70.0,
+            "yaw_min": -60.0,
+            "yaw_max": 60.0,
             "pitch_min": -65.0,
             "pitch_max": 55.0,
             "roll_min": -50.0,
             "roll_max": 50.0
         }
-        self.is_study_zone_set = True
+        self.is_study_zone_set = False
 
         # Học vùng học tập (Calibration 2 phút / 120s) & Tự động cân chỉnh EAR cho kính / mắt híp
         self.is_recording_zone = False
@@ -130,6 +130,9 @@ class FocusDetector:
         self.total_frames = 0
         self.focused_frames = 0
 
+        # Tự động nạp cấu hình cá nhân hóa nếu đã từng học góc trước đó
+        self.load_study_zone()
+
     def load_study_zone(self):
         if os.path.exists(ZONE_FILE):
             try:
@@ -159,13 +162,29 @@ class FocusDetector:
 
     def finalize_zone_learning(self):
         if len(self.recorded_samples["yaw"]) > 10:
+            rec_yaw_min = float(min(self.recorded_samples["yaw"]))
+            rec_yaw_max = float(max(self.recorded_samples["yaw"]))
+            rec_pitch_min = float(min(self.recorded_samples["pitch"]))
+            rec_pitch_max = float(max(self.recorded_samples["pitch"]))
+            rec_roll_min = float(min(self.recorded_samples["roll"]))
+            rec_roll_max = float(max(self.recorded_samples["roll"]))
+
+            # Tự động thích ứng linh hoạt theo setup bàn học của từng người (sách bên trái, bên phải, hoặc 2 màn hình)
+            # Thêm đệm 15 độ tự do mỗi bên để người dùng cử động thoải mái
+            learned_yaw_min = round(rec_yaw_min - 15.0, 1)
+            learned_yaw_max = round(rec_yaw_max + 15.0, 1)
+
+            # Đảm bảo phạm vi tự do tối thiểu ít nhất là [-45°, +45°]
+            final_yaw_min = min(-45.0, learned_yaw_min)
+            final_yaw_max = max(45.0, learned_yaw_max)
+
             self.study_zone = {
-                "yaw_min": -180.0,
-                "yaw_max": max(70.0, round(float(max(self.recorded_samples["yaw"]) + 10.0), 1)),
-                "pitch_min": round(float(min(self.recorded_samples["pitch"]) - 12.0), 1),
-                "pitch_max": round(float(max(self.recorded_samples["pitch"]) + 10.0), 1),
-                "roll_min": round(float(min(self.recorded_samples["roll"]) - 10.0), 1),
-                "roll_max": round(float(max(self.recorded_samples["roll"]) + 10.0), 1)
+                "yaw_min": final_yaw_min,
+                "yaw_max": final_yaw_max,
+                "pitch_min": round(rec_pitch_min - 15.0, 1),
+                "pitch_max": round(rec_pitch_max + 15.0, 1),
+                "roll_min": round(rec_roll_min - 15.0, 1),
+                "roll_max": round(rec_roll_max + 15.0, 1)
             }
 
             # Tự động hiệu chuẩn ngưỡng nhắm mắt EAR cho người đeo kính / mắt híp
@@ -455,10 +474,12 @@ class FocusDetector:
                 "landmarks": landmarks
             }
 
-        # 6. KIỂM TRA ĐẦU CÓ NẰM TRONG HƯỚNG BÀN HỌC KHÔNG?
-        # Người dùng yêu cầu: Quay trái tự do thoải mái 100%, chỉ có quay phải >= 70 độ mới là có vấn đề!
-        is_turned_right = (yaw >= 70.0)
-        is_turned_away = is_turned_right
+        # 6. KIỂM TRA ĐẦU CÓ NẰM TRONG VÙNG HỌC TẬP KHÔNG (Linh hoạt thích ứng theo từng người)
+        yaw_min = self.study_zone.get("yaw_min", -60.0)
+        yaw_max = self.study_zone.get("yaw_max", 60.0)
+        is_turned_left = (yaw < yaw_min)
+        is_turned_right = (yaw > yaw_max)
+        is_turned_away = is_turned_left or is_turned_right
         is_inside_study_zone = not is_turned_away
 
         # Gaze tracking: Chỉ cảnh báo khi liếc mắt quá mạnh sang phải (> 0.82)
@@ -525,23 +546,26 @@ class FocusDetector:
         elif not is_eyes_closed:
             self.eye_closed_start = None
 
-        # Ưu tiên 3: QUAY MẶT SANG PHẢI QUÁ 70 ĐỘ (Quay trái hoàn toàn thoải mái)
+        # Ưu tiên 3: QUAY MẶT RA NGOÀI VÙNG HỌC TẬP (Vượt ngưỡng cá nhân hóa)
         if status == "FOCUSED":
-            if is_turned_right:
+            if is_turned_away:
                 if self.distracted_start is None:
                     self.distracted_start = now
                 distracted_dur = now - self.distracted_start
 
+                dir_str = "sang phải" if is_turned_right else "sang trái"
+                limit_val = yaw_max if is_turned_right else yaw_min
+
                 if distracted_dur > self.distracted_limit_sec:
                     status = "DISTRACTED"
                     label = "MẤT TẬP TRUNG"
-                    reason = f"Quay mặt sang phải quá >= 70° ({distracted_dur:.1f}s)!"
+                    reason = f"Quay đầu {dir_str} ({yaw:+.0f}° vượt ngưỡng {limit_val:+.0f}°) ({distracted_dur:.1f}s)!"
                     should_alert = True
                     alert_type = "LOOKING_AWAY"
                 else:
                     status = "WARNING"
                     label = "CHÚ Ý"
-                    reason = f"Đang quay mặt sang phải ({yaw:+.1f}°)..."
+                    reason = f"Đang quay đầu {dir_str} ({yaw:+.0f}°)..."
             else:
                 self.distracted_start = None
 

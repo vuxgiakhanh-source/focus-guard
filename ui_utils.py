@@ -231,8 +231,16 @@ class HUDRenderer:
             d_bot = ImageDraw.Draw(bot_pil)
             d_bot.text((10, 8), "KHÔNG GIAN HỌC TẬP AI", font=self.get_font(14), fill=(100, 200, 255))
             d_bot.text((10, 28), status_zone_str, font=self.get_font(12), fill=status_zone_color)
-            d_bot.text((10, 48), f"Mặt trước cam  : {face_state}", font=self.get_font(12), fill=face_col)
-            d_bot.text((10, 68), f"Quay đầu       : {yaw_val:+.1f}° (Trái tự do 100% ✓ | Phải ≥ 70°)", font=self.get_font(12), fill=(220, 220, 220))
+            yaw_min_val = zone.get("yaw_min", -60.0)
+            yaw_max_val = zone.get("yaw_max", 60.0)
+            if yaw_min_val <= -170.0:
+                limit_str = f"Trái tự do ✓ | Phải ≥ {yaw_max_val:+.0f}°"
+            elif yaw_max_val >= 170.0:
+                limit_str = f"Trái ≤ {yaw_min_val:+.0f}° | Phải tự do ✓"
+            else:
+                limit_str = f"Vùng học: [{yaw_min_val:+.0f}°, {yaw_max_val:+.0f}°]"
+
+            d_bot.text((10, 68), f"Quay đầu       : {yaw_val:+.1f}° ({limit_str})", font=self.get_font(12), fill=(220, 220, 220))
             d_bot.text((10, 88), f"Cúi/Ngửa cam   : {pitch_val:+.1f}° (Tự do không giới hạn)", font=self.get_font(12), fill=(180, 220, 180))
             d_bot.text((10, 108), f"Độ mở mắt (EAR): {ear_val:.2f} (Ngưỡng nhắm: {ear_thresh:.2f})", font=self.get_font(12), fill=(220, 220, 220))
             d_bot.text((10, 132), "💡 Chỉnh góc cam thoải mái, chỉ cần thấy mặt là học!", font=self.get_font(11), fill=(255, 220, 120))
