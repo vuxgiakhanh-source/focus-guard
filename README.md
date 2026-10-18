@@ -151,11 +151,11 @@ Tất cả các chức năng đều hỗ trợ **Click chuột trực tiếp** l
 
 | Nút Bấm Trên Dock | Phím Tắt | Chức Năng |
 | :---: | :---: | :--- |
-| **`[🎯 Dạy góc (2p)]`** | **`C`** | Bắt đầu đo góc ngồi học và dáng mắt trong 2 phút (bấm lại lần nữa để hoàn tất sớm) |
-| **`[⏱ Pomodoro]`** | **`P`** | Bật / Tắt chu kỳ đếm giờ Pomodoro (25 phút học / 5 phút nghỉ) |
-| **`[🔊 Âm thanh]`** | **`M`** | Tắt / Mở âm thanh giọng nói cảnh báo (hữu ích khi ngồi thư viện) |
-| **`[🔄 Đặt lại]`** | **`R`** | Đặt lại điểm tập trung 100% và đồng hồ thời gian học |
-| **`[✕ Thoát & Lưu]`** | **`Q`** / **`Esc`** | Thoát ứng dụng an toàn, lưu lịch sử và hiển thị báo cáo tổng kết |
+| **`[C] Dạy góc 2p`** | **`C`** | Bắt đầu đo góc ngồi học và dáng mắt trong 2 phút (bấm lại lần nữa để hoàn tất sớm) |
+| **`[P] Pomodoro`** | **`P`** | Bật / Tắt chu kỳ đếm giờ Pomodoro (25 phút học / 5 phút nghỉ) |
+| **`[M] Âm thanh`** | **`M`** | Tắt / Mở âm thanh giọng nói cảnh báo (hữu ích khi ngồi thư viện) |
+| **`[R] Đặt lại`** | **`R`** | Đặt lại điểm tập trung 100% và đồng hồ thời gian học |
+| **`[Q] Thoát`** | **`Q`** / **`Esc`** | Thoát ứng dụng an toàn, lưu lịch sử và hiển thị báo cáo tổng kết |
 
 ---
 
@@ -164,20 +164,26 @@ Tất cả các chức năng đều hỗ trợ **Click chuột trực tiếp** l
 **Q1: Ứng dụng có làm nóng máy hay tốn pin khi chạy lâu không?**  
 * **A:** Hoàn toàn không! FocusGuard PRO chạy với tần suất xử lý tối ưu ~10.1ms/frame (chỉ tốn ~30% chu kỳ một luồng CPU), các luồng AI chạy đơn luồng độc lập, đảm bảo máy luôn êm mát, không hú quạt và tiết kiệm pin tối đa.
 
-**Q2: Nếu tôi ngồi học ở thư viện hoặc quán cà phê thì làm sao?**  
-* **A:** Bạn chỉ cần click nút **`[🔊 Âm thanh]`** (hoặc nhấn phím **`M`**) để chuyển sang chế độ im lặng `[MUTE]`. Mọi cảnh báo sẽ chuyển sang dạng viền đỏ trực quan trên màn hình và popup Windows Toast, không gây ồn ào xung quanh.
+**Q2: Nếu tôi lỡ tay click mở shortcut nhiều lần thì sao?**  
+* **A:** Ứng dụng tích hợp khóa đơn **Windows Named Mutex**. Nếu có phiên bản đang chạy ngầm, cửa sổ thứ 2 sẽ tự động nhận diện, đưa cửa sổ đang học lên phía trước màn hình và tự đóng ngay lập tức, ngăn chặn 100% tình trạng nghẽn webcam hay mở trùng lặp.
 
-**Q3: Tôi đeo kính gọng dày hay bị báo buồn ngủ oan thì chỉnh thế nào?**  
-* **A:** Bạn chỉ cần bấm nút **`[🎯 Dạy góc (2p)]`** (hoặc phím **`C`**). AI sẽ đo độ mở mắt xuyên qua tròng kính của bạn trong lúc học và tự động tính toán ngưỡng nhắm mắt chuẩn xác riêng cho bạn.
+**Q3: Nếu tôi đóng nắp che camera (E-Shutter) hoặc phòng tối thì app xử lý thế nào?**  
+* **A:** AI tích hợp cảm biến phát hiện màn hình tối đen. Nếu nắp camera đóng, app sẽ hiện cảnh báo vàng thân thiện nhắc bạn gạt mở nắp camera và tắt hoàn toàn giọng nói giục quay lại bàn học để không làm phiền bạn.
 
-**Q4: Dữ liệu học tập được lưu ở đâu?**  
+**Q4: Nếu tôi ngồi học ở thư viện hoặc quán cà phê thì làm sao?**  
+* **A:** Bạn chỉ cần click nút **`[M] Âm thanh`** (hoặc nhấn phím **`M`**) để chuyển sang chế độ im lặng `[MUTE]`. Mọi cảnh báo sẽ chuyển sang dạng viền đỏ trực quan trên màn hình và popup Windows Toast, không gây ồn ào xung quanh.
+
+**Q5: Tôi đeo kính gọng dày hay bị báo buồn ngủ oan thì chỉnh thế nào?**  
+* **A:** Bạn chỉ cần bấm nút **`[C] Dạy góc 2p`** (hoặc phím **`C`**). AI sẽ đo độ mở mắt xuyên qua tròng kính của bạn trong lúc học và tự động tính toán ngưỡng nhắm mắt chuẩn xác riêng cho bạn.
+
+**Q6: Dữ liệu học tập được lưu ở đâu?**  
 * **A:** Lịch sử học tập được lưu cục bộ ngay trong máy (file `focus_history.json`). File này đã được thêm vào `.gitignore` để đảm bảo dữ liệu riêng tư của bạn không bao giờ bị lộ lên GitHub.
 
-**Q5: Nếu tôi đổi góc học tập, chuyển bàn học, hoặc đổi chỗ ngồi thì làm sao?**  
-* **A:** Cực kỳ đơn giản! Bạn chỉ cần ngồi vào chỗ mới và bấm nút **`[🎯 Dạy góc (2p)]`** (hoặc nhấn phím **`C`**). AI sẽ ngay lập tức đo lại góc ngồi mới và tự động lưu đè cấu hình mới vào máy.  
+**Q7: Nếu tôi đổi góc học tập, chuyển bàn học, hoặc đổi chỗ ngồi thì làm sao?**  
+* **A:** Cực kỳ đơn giản! Bạn chỉ cần ngồi vào chỗ mới và bấm nút **`[C] Dạy góc 2p`** (hoặc nhấn phím **`C`**). AI sẽ ngay lập tức đo lại góc ngồi mới và tự động lưu đè cấu hình mới vào máy.  
 * *Mẹo:* Nếu không muốn đợi hết 2 phút, chỉ cần ngồi học theo góc mới khoảng 15-20 giây rồi **bấm lại phím `C` một lần nữa** là hệ thống sẽ lưu và hoàn tất ngay tức thì!
 
-**Q6: Bàn học của tôi để sách bên phải hoặc dùng 2 màn hình thì AI có hiểu không?**  
+**Q8: Bàn học của tôi để sách bên phải hoặc dùng 2 màn hình thì AI có hiểu không?**  
 * **A:** Hiểu 100%! Trong 2 phút đo góc ban đầu, bất kể bạn quay sang đâu để đọc bài, AI đều ghi nhận và tự động mở rộng vùng học tập sang phía đó kèm 15° đệm an toàn, không bao giờ ép bạn phải để sách ở một bên cố định.
 
 ---
