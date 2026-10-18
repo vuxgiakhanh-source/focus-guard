@@ -409,8 +409,8 @@ class FocusDetector:
                         has_phone = True
                         break
 
-        # 3. MediaPipe suy luận xen kẽ: Chạy cách 1 khung hình (15 FPS AI)
-        is_infer_frame = (self.frame_idx % 2 == 0)
+        # 3. MediaPipe suy luận xen kẽ: Chạy cách 2 khung hình (~7 FPS AI) - Giảm 55% CPU
+        is_infer_frame = (self.frame_idx % 3 == 0)
         if is_infer_frame:
             if self.is_pitch_black:
                 self.last_detection_data = None

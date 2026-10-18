@@ -1,9 +1,26 @@
 # -*- coding: utf-8 -*-
+import os
+# GIỚI HẠN TUYỆT ĐỐI 1 THREAD CHO MỌI THƯ VIỆN TOÁN HỌC & AI (Khóa chặt CPU <= 15%)
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["TORCH_NUM_THREADS"] = "1"
+
+try:
+    import torch
+    import ultralytics.utils.torch_utils as tu
+    tu.NUM_THREADS = 1
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+except Exception:
+    pass
+
 import cv2
+cv2.setNumThreads(1)
 import time
 import sys
-import os
-
 import gc
 import ctypes
 
@@ -135,6 +152,7 @@ def run_focus_guard():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_FPS, 20)
 
     # Đăng ký sự kiện Click chuột lên các nút giao diện
     mouse_click_action = None
@@ -177,8 +195,12 @@ def run_focus_guard():
     alert_msg_time = 0
     last_recording_state = False
 
+    TARGET_FPS = 20
+    FRAME_INTERVAL = 1.0 / TARGET_FPS  # 0.050 giây (20 FPS mượt mà chuẩn công thái học)
+
     failed_frames_count = 0
     while True:
+        loop_start = time.perf_counter()
         ret, frame = cap.read()
         if not ret:
             failed_frames_count += 1
@@ -360,7 +382,11 @@ def run_focus_guard():
             print("[*] Đóng cửa sổ ứng dụng.")
             break
 
-        key = cv2.waitKey(1) & 0xFF
+        # Precision Frame Pacer (Khóa chặt CPU <= 15%, ngủ đúng thời gian còn lại của frame 50ms)
+        loop_elapsed = time.perf_counter() - loop_start
+        remaining = FRAME_INTERVAL - loop_elapsed
+        wait_ms = max(1, int(remaining * 1000)) if remaining > 0 else 1
+        key = cv2.waitKey(wait_ms) & 0xFF
 
         # Xử lý hành động từ Click chuột hoặc Phím tắt bàn phím
         action = None

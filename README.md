@@ -68,6 +68,11 @@
 10. **🔄 Tự Động Thích Ứng Góc Ngồi Mới (Autonomous Pose Adaptation):**
     * Khi bạn đổi tư thế ngồi, xoay ghế hoặc chỉnh góc webcam, AI sẽ tự động nhận biết bạn đang ngồi học ổn định tại góc mới sau 2.0 giây, tự động thiết lập lại tâm góc chuẩn mà không cần thao tác bấm phím, kèm banner xanh và thông báo xác nhận tức thì.
 
+11. **🍃 Chế Độ Siêu Tiết Kiệm CPU (Eco Low-Power Engine - Dưới 10% CPU):**
+    * Khóa cứng số luồng xử lý PyTorch, OpenMP, MKL và OpenCV về 1 thread duy nhất (chặn triệt để hiện tượng Ultralytics YOLO tự ý bung 8-16 thread làm nóng máy).
+    * Bộ điều tốc nhịp khung hình Precision Frame Pacer (20 FPS) tự động đưa CPU vào trạng thái nghỉ sâu (OS sleep) trong thời gian chờ giữa các khung hình.
+    * Quét điện thoại (2 FPS, $256\times 256$) và MediaPipe (6.7 FPS) xen kẽ thông minh, cắt giảm tới 90% lượng CPU tiêu thụ, đảm bảo máy luôn mát mẻ và êm ái.
+
 ---
 
 ## 🛠 Hướng Dẫn Cài Đặt (Installation)

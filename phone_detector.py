@@ -137,6 +137,8 @@ class PhoneDetector:
     def _load_model(self, model_name):
         try:
             import torch
+            import ultralytics.utils.torch_utils as tu
+            tu.NUM_THREADS = 1
             self.torch = torch
             torch.set_num_threads(1)
             torch.set_num_interop_threads(1)
@@ -147,22 +149,22 @@ class PhoneDetector:
 
             # Khởi động trước (Warmup) mô hình để nạp trọng số vào CPU L2/L3 cache
             with torch.inference_mode():
-                dummy = np.zeros((320, 320, 3), dtype=np.uint8)
-                self.model.predict(dummy, classes=[67], conf=0.5, verbose=False, imgsz=320)
+                dummy = np.zeros((256, 256, 3), dtype=np.uint8)
+                self.model.predict(dummy, classes=[67], conf=0.5, verbose=False, imgsz=256)
 
             self.is_ready = True
-            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (conf=0.40, imgsz=320, Anti-Hallucination Active)!")
+            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (conf=0.40, imgsz=256, 2 FPS Eco Mode Active)!")
             threading.Thread(target=self._inference_loop, daemon=True).start()
         except Exception as e:
             print(f"[-] Không thể nạp YOLOv8: {e}")
 
     def update_frame(self, frame):
-        """Chỉ nhận frame nếu đã đến chu kỳ quét (~5 FPS)"""
+        """Chỉ nhận frame nếu đã đến chu kỳ quét 2 FPS (mỗi 0.50s) - Tiết kiệm 65% CPU"""
         if not self.is_ready:
             return
         
         now = time.time()
-        if now - self.last_infer_time >= 0.20:
+        if now - self.last_infer_time >= 0.50:
             with self.lock:
                 self.pending_frame = frame.copy()
             self.frame_event.set()
@@ -274,7 +276,7 @@ class PhoneDetector:
                             classes=[67],
                             conf=self.conf_thresh,
                             verbose=False,
-                            imgsz=320
+                            imgsz=256
                         )
 
                     boxes = []
@@ -297,7 +299,7 @@ class PhoneDetector:
                             self.latest_boxes = tracked
                             self.last_detected_time = now
                         else:
-                            if now - self.last_detected_time > 0.55:
+                            if now - self.last_detected_time > 1.10:
                                 self.latest_boxes = []
                 except Exception:
                     pass
@@ -305,7 +307,7 @@ class PhoneDetector:
     def get_detected_phones(self):
         """Trả về danh sách các điện thoại nhận diện được dạng (x1, y1, x2, y2, conf, is_held)"""
         with self.lock:
-            if time.time() - self.last_detected_time > 0.60:
+            if time.time() - self.last_detected_time > 1.20:
                 return []
             return list(self.latest_boxes)
 

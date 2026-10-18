@@ -156,7 +156,7 @@ class HUDRenderer:
 
         # ---------------- ĐỊNH VỊ CÁC PANEL THÔNG MINH ----------------
         self.hud_frame_count += 1
-        should_refresh_text = (self.hud_frame_count % 2 == 0) or bool(alert_msg) or (self.cached_header is None)
+        should_refresh_text = (self.hud_frame_count % 4 == 0) or bool(alert_msg) or (self.cached_header is None)
 
         # 1. Header nổi góc trên bên trái: x:[12..445], y:[8..52] (433 x 44)
         hx1, hy1, hx2, hy2 = 12, 8, 445, 52
