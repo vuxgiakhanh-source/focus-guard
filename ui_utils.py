@@ -46,8 +46,9 @@ class HUDRenderer:
             for r in (False, True):
                 self._pre_render_dock_bar(is_muted=m, is_rec=r)
 
-        # Cập nhật chữ tối đa 3 lần/giây khi app chạy ở 6 FPS.
-        self.hud_frame_count = 0
+        # Làm mới chữ mỗi 0,2 giây và vẽ ngay khi trạng thái đổi.
+        self.last_text_refresh_time = 0.0
+        self.last_text_state = None
         self.cached_header = None
         self.cached_score_card = None
         self.cached_pose_card = None
@@ -163,8 +164,15 @@ class HUDRenderer:
             status_badge_bg = (75, 20, 25)
 
         # ---------------- ĐỊNH VỊ CÁC PANEL THÔNG MINH ----------------
-        self.hud_frame_count += 1
-        should_refresh_text = (self.hud_frame_count % 2 == 0) or bool(alert_msg) or is_rec or (self.cached_header is None)
+        text_state = (status, result.get("label"), is_rec, is_muted, pomo_state, int(pomo_time), alert_msg)
+        should_refresh_text = (
+            self.cached_header is None
+            or text_state != self.last_text_state
+            or now - self.last_text_refresh_time >= 0.2
+        )
+        if should_refresh_text:
+            self.last_text_refresh_time = now
+            self.last_text_state = text_state
 
         # 1. Header nổi góc trên bên trái: x:[12..445], y:[8..52] (433 x 44)
         hx1, hy1, hx2, hy2 = 12, 8, 445, 52

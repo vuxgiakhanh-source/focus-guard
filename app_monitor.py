@@ -10,9 +10,9 @@ import re
 class AppDistractionMonitor:
     """
     Giám sát thao tác trên ứng dụng và mạng xã hội gây xao nhãng (Facebook, YouTube, TikTok...):
-    - CHỈ CẢNH BÁO KHI THỰC SỰ ĐANG DÙNG / THAO TÁC (click chuột, gõ phím, cuộn trang) > 2.5s.
+    - CHỈ CẢNH BÁO SAU KHI THỰC SỰ THAO TÁC (click chuột, gõ phím, cuộn trang) liên tục khoảng 6s.
     - Mở tab để đó nghe nhạc hoặc không đụng vào -> HOÀN TOÀN KHÔNG BÁO ĐỘNG.
-    - Ngay khi người dùng đóng tab / chuyển sang ứng dụng khác -> HỦY CẢNH BÁO TỨC THÌ (Zero Delay)!
+    - Khi đóng tab / chuyển ứng dụng khác -> vòng giám sát cập nhật trạng thái theo nhịp khoảng 0.1 giây.
     - Giờ giải lao Pomodoro -> Cho phép giải trí tự do 100%.
     - Đọc tên cửa sổ bằng Windows User32 API; phần tải CPU chính đến từ các mô hình nhận diện.
     """
@@ -69,7 +69,7 @@ class AppDistractionMonitor:
     def check_distraction(self, is_pomodoro_break=False):
         """
         Kiểm tra người dùng có đang THỰC SỰ THAO TÁC trên Facebook hay YouTube không.
-        Kiểm tra thời gian thực từng khung hình (không lưu đệm cũ gây báo sai sau khi tắt).
+        Được gọi khoảng 10 lần/giây; main.py giữ kết quả mới nhất giữa các khung hình camera.
         """
         now = time.monotonic()
         dt = max(0.0, min(1.0, now - self.last_check_time))

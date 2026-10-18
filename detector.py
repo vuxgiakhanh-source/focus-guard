@@ -4,12 +4,16 @@ import json
 import cv2
 import numpy as np
 import time
+import threading
 import math
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 ZONE_FILE = "study_zone.json"
+FACE_INFERENCE_INTERVAL_SEC = 1.0
+FACE_DETECTION_TTL_SEC = 2.5
+FACE_INFERENCE_SCALE = 0.75
 
 class LowPassFilter:
     def __init__(self, alpha=0.5):
@@ -77,7 +81,7 @@ class FocusDetector:
                  away_limit_sec=18.0):        # Rời bàn >= 18s mới bắt đầu báo (cho phép vươn vai, lấy nước)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản World-Class DMS):
-        1. MediaPipe suy luận xen kẽ; mặc định khoảng 1.5 lần/giây ở camera 6 FPS
+        1. MediaPipe suy luận khoảng 1 lần/giây trên ảnh thu nhỏ, độc lập FPS hiển thị
         2. Bộ lọc One-Euro Filter (CHI 2012) triệt tiêu 100% rung giật và độ trễ
         3. NHTSA / ISO Standard PERCLOS (P80) + Micro-sleep detection
         4. Chế độ Desk Reading Mode: Tự động nhận diện tư thế cúi đầu đọc sách/viết bài
@@ -123,12 +127,14 @@ class FocusDetector:
         self.record_start_time = 0.0
         self.record_duration = 10.0
         self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
+        self.last_recorded_face_timestamp = 0.0
         self.last_calib_msg = ""
 
         # Tự động phát hiện góc camera thay đổi & thích ứng tức thì (Instant Camera Shift & Zone Adaptation)
         self.prev_small_gray = None
         self.camera_shifted_time = 0.0
         self.auto_zone_buffer = []          # Buffer mẫu góc quay khi góc cam hoặc tư thế đổi
+        self.last_auto_zone_sample_time = 0.0
         self.last_auto_adapt_time = 0.0     # Cooldown giữa các lần thích ứng
         self.recent_auto_adapt_msg = None
         self.recent_auto_adapt_until = 0.0
@@ -176,8 +182,19 @@ class FocusDetector:
         self.frame_rgb_buffer = np.empty((480, 640, 3), dtype=np.uint8)
         self.image_points = np.empty((6, 2), dtype=np.float64)
 
-        self.frame_idx = 0
+        self.last_face_infer_time = 0.0
         self.last_detection_data = None
+        self._inference_lock = threading.Lock()
+        self._inference_event = threading.Event()
+        self._inference_thread = None
+        self._inference_shutdown = False
+        self._inference_busy = False
+        self._inference_generation = 0
+        self._pending_face_frame = None
+        self._completed_face_result = None
+        self._last_face_error_log_time = 0.0
+        self._was_pomodoro_break = False
+        self._was_pitch_black = False
         self.last_brightness_check_time = 0
         self.is_dark_env = False
         self.is_pitch_black = False
@@ -196,6 +213,153 @@ class FocusDetector:
         self.focused_frames = 0
 
         self.load_study_zone()
+
+    def _submit_face_frame(self, frame_bgr, timestamp):
+        """Queue one recent frame; drop work while inference is busy instead of building a backlog."""
+        with self._inference_lock:
+            if self._inference_shutdown or self._inference_busy:
+                return False
+
+            frame_copy = frame_bgr.copy()
+            self._pending_face_frame = (frame_copy, timestamp, self._inference_generation)
+            if self._inference_thread is None:
+                self._inference_thread = threading.Thread(
+                    target=self._face_inference_loop,
+                    name="FocusGuard-FaceInference",
+                    daemon=True
+                )
+                self._inference_thread.start()
+            self._inference_event.set()
+        return True
+
+    def _face_inference_loop(self):
+        """Run MediaPipe away from the camera/UI loop, keeping only the newest pending frame."""
+        while True:
+            self._inference_event.wait()
+            with self._inference_lock:
+                if self._inference_shutdown:
+                    return
+                task = self._pending_face_frame
+                self._pending_face_frame = None
+                self._inference_event.clear()
+                if task is None:
+                    continue
+                self._inference_busy = True
+
+            frame_bgr, timestamp, generation = task
+            with self._inference_lock:
+                if self._inference_shutdown:
+                    self._inference_busy = False
+                    return
+            frame_h, frame_w = frame_bgr.shape[:2]
+            landmarks = None
+            error = None
+            try:
+                inference_w = max(160, int(round(frame_w * FACE_INFERENCE_SCALE)))
+                inference_h = max(120, int(round(frame_h * FACE_INFERENCE_SCALE)))
+                if (inference_w, inference_h) != (frame_w, frame_h):
+                    inference_frame = cv2.resize(
+                        frame_bgr, (inference_w, inference_h), interpolation=cv2.INTER_AREA
+                    )
+                else:
+                    inference_frame = frame_bgr
+
+                enhanced_frame = self.apply_clahe_enhancement(inference_frame)
+                if self.frame_rgb_buffer.shape[:2] != (inference_h, inference_w):
+                    self.frame_rgb_buffer = np.empty((inference_h, inference_w, 3), dtype=np.uint8)
+                cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2RGB, dst=self.frame_rgb_buffer)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=self.frame_rgb_buffer)
+                result = self.landmarker.detect(mp_image)
+                if result.face_landmarks:
+                    landmarks = result.face_landmarks[0]
+            except Exception as exc:
+                error = str(exc)
+
+            with self._inference_lock:
+                if generation == self._inference_generation and not self._inference_shutdown:
+                    self._completed_face_result = (
+                        generation, timestamp, frame_w, frame_h, landmarks, error
+                    )
+                self._inference_busy = False
+
+    def _take_face_inference_result(self):
+        with self._inference_lock:
+            completed = self._completed_face_result
+            self._completed_face_result = None
+            if completed is None or completed[0] != self._inference_generation:
+                return None
+            return completed
+
+    def _invalidate_face_inference(self):
+        """Discard in-flight results after breaks or a covered camera so stale faces cannot return."""
+        with self._inference_lock:
+            self._inference_generation += 1
+            self._pending_face_frame = None
+            self._completed_face_result = None
+            self._inference_event.clear()
+
+    def _reset_face_filters(self):
+        self.smooth_pitch.reset()
+        self.smooth_yaw.reset()
+        self.smooth_roll.reset()
+        self.smooth_ear.reset()
+        self.smooth_gaze.reset()
+
+    def _consume_face_inference_result(self, completed, now):
+        _, timestamp, w, h, landmarks, error = completed
+        if error:
+            if now - self._last_face_error_log_time >= 30.0:
+                print(f"[-] Lỗi suy luận MediaPipe: {error}")
+                self._last_face_error_log_time = now
+            landmarks = None
+
+        if not landmarks:
+            self.missing_face_count += 1
+            if self.missing_face_count >= 2:
+                self.last_detection_data = None
+                self._reset_face_filters()
+            return
+
+        self.missing_face_count = 0
+        raw_ear_l = self.calculate_ear(landmarks, self.LEFT_EYE, w, h)
+        raw_ear_r = self.calculate_ear(landmarks, self.RIGHT_EYE, w, h)
+        avg_ear = self.smooth_ear.update((raw_ear_l + raw_ear_r) / 2.0, timestamp)
+        mar = self.calculate_mar(landmarks, w, h)
+
+        raw_pitch, raw_yaw, raw_roll, _, _ = self.estimate_head_pose(landmarks, w, h)
+        pitch = self.smooth_pitch.update(raw_pitch, timestamp)
+        yaw = self.smooth_yaw.update(raw_yaw, timestamp)
+        roll = self.smooth_roll.update(raw_roll, timestamp)
+
+        raw_gaze = self.calculate_iris_gaze(landmarks, w, h)
+        gaze_ratio = self.smooth_gaze.update(raw_gaze, timestamp)
+
+        self.last_detection_data = {
+            "landmarks": landmarks,
+            "ear": avg_ear,
+            "mar": mar,
+            "pitch": pitch,
+            "yaw": yaw,
+            "roll": roll,
+            "gaze_ratio": gaze_ratio,
+            "timestamp": timestamp
+        }
+
+    def stop(self):
+        """Stop the inference worker and release the MediaPipe task."""
+        with self._inference_lock:
+            self._inference_shutdown = True
+            self._pending_face_frame = None
+            self._inference_event.set()
+            worker = self._inference_thread
+
+        if worker is not None:
+            worker.join(timeout=2.0)
+        if worker is None or not worker.is_alive():
+            try:
+                self.landmarker.close()
+            except Exception:
+                pass
 
     def load_study_zone(self):
         if os.path.exists(ZONE_FILE):
@@ -266,6 +430,7 @@ class FocusDetector:
         self.record_start_time = time.monotonic()
         self.record_duration = duration
         self.recorded_samples = {"yaw": [], "pitch": [], "roll": [], "ear": []}
+        self.last_recorded_face_timestamp = float((self.last_detection_data or {}).get("timestamp", 0.0))
         self.last_calib_msg = ""
         try:
             print(f"[+] [KHUNG HOC] Bat dau xac dinh khung hoc tap trong {duration:.0f}s...")
@@ -438,11 +603,17 @@ class FocusDetector:
     def process_frame(self, frame_bgr, detected_phones=None, is_pomodoro_break=False):
         h, w, _ = frame_bgr.shape
         self.total_frames += 1
-        self.frame_idx += 1
         now = time.monotonic()
 
         # Nếu đang trong giờ nghỉ Pomodoro, cho phép thư giãn 100%
         if is_pomodoro_break:
+            if not self._was_pomodoro_break:
+                self._invalidate_face_inference()
+                self.last_detection_data = None
+                self.last_face_infer_time = 0.0
+                self.missing_face_count = 0
+                self._reset_face_filters()
+            self._was_pomodoro_break = True
             self._update_energy("BREAK", now)
             return {
                 "status": "BREAK",
@@ -466,6 +637,14 @@ class FocusDetector:
                 "focus_score": self.get_focus_score(),
                 "landmarks": None
             }
+
+        if self._was_pomodoro_break:
+            self._invalidate_face_inference()
+            self.last_detection_data = None
+            self.last_face_infer_time = 0.0
+            self.missing_face_count = 0
+            self._reset_face_filters()
+            self._was_pomodoro_break = False
 
         # 0.5. Phát hiện thay đổi khung cảnh trên ảnh thu nhỏ; chi phí thấp hơn nhiều so với suy luận AI.
         try:
@@ -501,54 +680,42 @@ class FocusDetector:
                         has_phone = True
                         break
 
-        # 3. MediaPipe suy luận mỗi 4 frame (khoảng 1.5 lần/giây với nhịp camera 6 FPS)
-        is_infer_frame = (self.frame_idx % 4 == 0)
-        if is_infer_frame:
-            if self.is_pitch_black:
+        # 3. MediaPipe chạy nền; luồng preview không chờ suy luận.
+        if self.is_pitch_black:
+            if not self._was_pitch_black:
+                self._invalidate_face_inference()
                 self.last_detection_data = None
-            else:
-                enhanced_frame = self.apply_clahe_enhancement(frame_bgr)
-                if self.frame_rgb_buffer.shape[:2] != (h, w):
-                    self.frame_rgb_buffer = np.empty((h, w, 3), dtype=np.uint8)
-                cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2RGB, dst=self.frame_rgb_buffer)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=self.frame_rgb_buffer)
-                result = self.landmarker.detect(mp_image)
+                self.missing_face_count = 0
+                self._reset_face_filters()
+            self._was_pitch_black = True
+        else:
+            if self._was_pitch_black:
+                self._invalidate_face_inference()
+                self.last_detection_data = None
+                self.last_face_infer_time = 0.0
+                self.missing_face_count = 0
+                self._reset_face_filters()
+            self._was_pitch_black = False
 
-                if not result.face_landmarks or len(result.face_landmarks) == 0:
-                    self.missing_face_count += 1
-                    if self.missing_face_count >= 2:
-                        self.last_detection_data = None
-                else:
-                    self.missing_face_count = 0
-                    landmarks = result.face_landmarks[0]
-                    raw_ear_l = self.calculate_ear(landmarks, self.LEFT_EYE, w, h)
-                    raw_ear_r = self.calculate_ear(landmarks, self.RIGHT_EYE, w, h)
-                    avg_ear = self.smooth_ear.update((raw_ear_l + raw_ear_r) / 2.0, now)
-                    mar = self.calculate_mar(landmarks, w, h)
+            if now - self.last_face_infer_time >= FACE_INFERENCE_INTERVAL_SEC:
+                self.last_face_infer_time = now
+                self._submit_face_frame(frame_bgr, now)
 
-                    raw_pitch, raw_yaw, raw_roll, _, _ = self.estimate_head_pose(landmarks, w, h)
-                    pitch = self.smooth_pitch.update(raw_pitch, now)
-                    yaw = self.smooth_yaw.update(raw_yaw, now)
-                    roll = self.smooth_roll.update(raw_roll, now)
+            completed_face_result = self._take_face_inference_result()
+            if completed_face_result is not None and now - completed_face_result[1] <= 2.0:
+                self._consume_face_inference_result(completed_face_result, now)
 
-                    raw_gaze = self.calculate_iris_gaze(landmarks, w, h)
-                    gaze_ratio = self.smooth_gaze.update(raw_gaze, now)
-
-                    self.last_detection_data = {
-                        "landmarks": landmarks,
-                        "ear": avg_ear,
-                        "mar": mar,
-                        "pitch": pitch,
-                        "yaw": yaw,
-                        "roll": roll,
-                        "gaze_ratio": gaze_ratio
-                    }
+        # Không dùng lại pose cũ nếu worker lỗi hoặc treo lâu.
+        if self.last_detection_data is not None:
+            face_age = now - float(self.last_detection_data.get("timestamp", 0.0))
+            if face_age > FACE_DETECTION_TTL_SEC:
+                self.last_detection_data = None
+                self.missing_face_count = max(2, self.missing_face_count)
+                self._reset_face_filters()
 
         # 4. Nếu không thấy mặt
         if self.last_detection_data is None:
-            self.smooth_pitch.reset()
-            self.smooth_yaw.reset()
-            self.smooth_roll.reset()
+            self._reset_face_filters()
             self.auto_zone_buffer.clear()
 
             if self.is_recording_zone:
@@ -683,10 +850,13 @@ class FocusDetector:
             elapsed = now - self.record_start_time
             record_time_left = max(0.0, self.record_duration - elapsed)
 
-            self.recorded_samples["yaw"].append(yaw)
-            self.recorded_samples["pitch"].append(pitch)
-            self.recorded_samples["roll"].append(roll)
-            self.recorded_samples["ear"].append(avg_ear)
+            face_sample_time = float(data.get("timestamp", now))
+            if face_sample_time > self.last_recorded_face_timestamp:
+                self.recorded_samples["yaw"].append(yaw)
+                self.recorded_samples["pitch"].append(pitch)
+                self.recorded_samples["roll"].append(roll)
+                self.recorded_samples["ear"].append(avg_ear)
+                self.last_recorded_face_timestamp = face_sample_time
 
             if elapsed >= self.record_duration:
                 self.finalize_zone_learning()
@@ -747,8 +917,10 @@ class FocusDetector:
 
         is_candidate_new_stance = (was_camera_shifted or angle_shifted) and valid_study_direction and (not has_phone) and (avg_ear >= 0.14) and (mar <= 0.60) and (pitch >= -68.0)
 
-        if is_candidate_new_stance and (now - self.last_auto_adapt_time >= 4.0):
-            self.auto_zone_buffer.append((now, yaw, pitch, avg_ear))
+        face_sample_time = float(data.get("timestamp", now))
+        if is_candidate_new_stance and (now - self.last_auto_adapt_time >= 4.0) and (face_sample_time > self.last_auto_zone_sample_time):
+            self.last_auto_zone_sample_time = face_sample_time
+            self.auto_zone_buffer.append((face_sample_time, yaw, pitch, avg_ear))
             max_buf_sec = 2.5 if was_camera_shifted else 3.5
             self.auto_zone_buffer = [s for s in self.auto_zone_buffer if (now - s[0]) <= max_buf_sec]
 

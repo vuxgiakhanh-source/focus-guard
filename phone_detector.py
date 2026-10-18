@@ -133,10 +133,14 @@ class PhoneDetector:
         self.pending_frame = None
         self.frame_event = threading.Event()
         self.last_infer_time = 0.0
+        self.inference_busy = False
         self.last_error_log_time = 0.0
         self.tracker = KinematicPhoneTracker()
-
-        threading.Thread(target=self._load_model, args=(model_name,), daemon=True).start()
+        self.model_thread = threading.Thread(
+            target=self._load_model, args=(model_name,), name="FocusGuard-YOLOLoader", daemon=True
+        )
+        self.inference_thread = None
+        self.model_thread.start()
 
     def _load_model(self, model_name):
         try:
@@ -166,21 +170,32 @@ class PhoneDetector:
 
             if not self.is_running:
                 return
-            self.is_ready = True
+            with self.lock:
+                if not self.is_running:
+                    return
+                self.is_ready = True
+                self.inference_thread = threading.Thread(
+                    target=self._inference_loop,
+                    name="FocusGuard-PhoneInference",
+                    daemon=True
+                )
+                self.inference_thread.start()
             print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (imgsz=256, tối đa khoảng 1 FPS).")
-            threading.Thread(target=self._inference_loop, daemon=True).start()
         except Exception as e:
             print(f"[-] Không thể nạp YOLOv8: {e}")
 
     def update_frame(self, frame):
-        """Chỉ gửi frame mới cho YOLO khi đủ thời gian giữa hai lần suy luận."""
-        if not self.is_ready:
+        """Gửi tối đa một frame theo nhịp YOLO, không chép frame trong lúc suy luận."""
+        if not self.is_ready or not self.is_running:
             return
-        
+
         now = time.monotonic()
-        if now - self.last_infer_time >= self.inference_interval_sec:
-            with self.lock:
-                self.pending_frame = frame.copy()
+        with self.lock:
+            if (not self.is_running or self.inference_busy or self.pending_frame is not None
+                    or now - self.last_infer_time < self.inference_interval_sec):
+                return
+            self.pending_frame = frame.copy()
+            self.last_infer_time = now
             self.frame_event.set()
 
     def _validate_phone_candidate(self, frame, x1, y1, x2, y2, conf):
@@ -269,57 +284,61 @@ class PhoneDetector:
         return True, has_hand_contact
 
     def _inference_loop(self):
-        """Vòng lặp suy luận nền chính xác, không khóa thread"""
+        """Chỉ xử lý một frame tại một thời điểm; worker dừng gọn khi app thoát."""
         while self.is_running:
             if not self.frame_event.wait(timeout=0.25):
                 continue
-            self.frame_event.clear()
 
-            frame_to_process = None
             with self.lock:
+                self.frame_event.clear()
                 frame_to_process = self.pending_frame
                 self.pending_frame = None
+                if frame_to_process is None:
+                    continue
+                self.inference_busy = True
 
-            if frame_to_process is not None and self.model is not None and self.torch is not None:
-                now = time.monotonic()
-                self.last_infer_time = now
-                try:
-                    with self.torch.inference_mode():
-                        # Lớp 67: cell phone (chỉ nhận diện điện thoại, loại bỏ remote/vật dụng khác)
-                        results = self.model.predict(
-                            source=frame_to_process,
-                            classes=[67],
-                            conf=self.conf_thresh,
-                            verbose=False,
-                            imgsz=256
-                        )
+            now = time.monotonic()
+            try:
+                if not self.is_running or self.model is None or self.torch is None:
+                    continue
 
-                    boxes = []
-                    if results and len(results) > 0:
-                        r = results[0]
-                        if r.boxes is not None and len(r.boxes) > 0:
-                            for box in r.boxes:
-                                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                                conf = float(box.conf[0])
-                                is_valid, has_hand_contact = self._validate_phone_candidate(
-                                    frame_to_process, x1, y1, x2, y2, conf
-                                )
-                                if is_valid:
-                                    boxes.append((x1, y1, x2, y2, conf, has_hand_contact))
+                with self.torch.inference_mode():
+                    results = self.model.predict(
+                        source=frame_to_process,
+                        classes=[67],
+                        conf=self.conf_thresh,
+                        verbose=False,
+                        imgsz=256
+                    )
 
-                    tracked = self.tracker.update(boxes, now)
+                boxes = []
+                if results and len(results) > 0:
+                    result = results[0]
+                    if result.boxes is not None and len(result.boxes) > 0:
+                        for box in result.boxes:
+                            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                            conf = float(box.conf[0])
+                            is_valid, has_hand_contact = self._validate_phone_candidate(
+                                frame_to_process, x1, y1, x2, y2, conf
+                            )
+                            if is_valid:
+                                boxes.append((x1, y1, x2, y2, conf, has_hand_contact))
 
-                    with self.lock:
+                tracked = self.tracker.update(boxes, now)
+                with self.lock:
+                    if self.is_running:
                         if tracked:
                             self.latest_boxes = tracked
                             self.last_detected_time = now
-                        else:
-                            if now - self.last_detected_time > self.detection_ttl_sec:
-                                self.latest_boxes = []
-                except Exception as e:
-                    if now - self.last_error_log_time >= 30.0:
-                        print(f"[-] Lỗi suy luận YOLO: {e}")
-                        self.last_error_log_time = now
+                        elif now - self.last_detected_time > self.detection_ttl_sec:
+                            self.latest_boxes = []
+            except Exception as exc:
+                if now - self.last_error_log_time >= 30.0:
+                    print(f"[-] Lỗi suy luận YOLO: {exc}")
+                    self.last_error_log_time = now
+            finally:
+                with self.lock:
+                    self.inference_busy = False
 
     def get_detected_phones(self):
         """Trả về danh sách các điện thoại nhận diện được dạng (x1, y1, x2, y2, conf, is_held)"""
@@ -329,5 +348,13 @@ class PhoneDetector:
             return list(self.latest_boxes)
 
     def stop(self):
-        self.is_running = False
-        self.frame_event.set()
+        with self.lock:
+            self.is_running = False
+            self.is_ready = False
+            self.pending_frame = None
+            self.frame_event.set()
+            workers = (self.inference_thread, self.model_thread)
+
+        for worker in workers:
+            if worker is not None and worker is not threading.current_thread():
+                worker.join(timeout=1.0)

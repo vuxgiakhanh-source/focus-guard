@@ -27,7 +27,6 @@ import ctypes
 # Tối ưu Garbage Collector: Giảm tần suất dọn dẹp để triệt tiêu hiện tượng giật khung hình
 gc.set_threshold(50000, 15, 15)
 
-# 1ms timer resolution is not requested at the 10 FPS rate.
 
 # Đảm bảo in UTF-8 không lỗi trên Windows
 try:
@@ -46,8 +45,9 @@ from toast_notifier import WindowsToastManager
 from app_monitor import AppDistractionMonitor
 
 WIN_TITLE = "FocusGuard - AI Distraction & Drowsiness Detector"
-TARGET_FPS = 6
-BREAK_TARGET_FPS = 3
+TARGET_FPS = 30
+BREAK_TARGET_FPS = 15
+ANALYSIS_INTERVAL_SEC = 0.1
 
 _instance_mutex = None
 
@@ -189,6 +189,7 @@ def run_focus_guard():
         cap = cv2.VideoCapture(1)
 
     if not cap.isOpened():
+        detector.stop()
         print("[-] Không thể mở Webcam. Vui lòng kiểm tra quyền camera hoặc cắm webcam!")
         try:
             import ctypes
@@ -249,6 +250,12 @@ def run_focus_guard():
     web_events = 0
     last_alert_state = False
     last_web_alerting = False
+    last_detector_process_time = 0.0
+    last_detector_break_state = None
+    last_detector_result = None
+    last_app_monitor_check = 0.0
+    cached_web_distract = None
+    last_app_monitor_break_state = None
     focus_score_sum = 0.0
     focus_score_samples = 0
 
@@ -300,14 +307,25 @@ def run_focus_guard():
             else:
                 detected_phones = []
     
-            # 3. Chạy AI phân tích (EMA, Gaze, HeadPose, Adaptive EAR)
-            result = detector.process_frame(frame, detected_phones=detected_phones, is_pomodoro_break=is_break)
+            # Phân tích trạng thái 10 Hz; luồng camera/HUD vẫn chạy ở 30 FPS.
+            process_now = time.monotonic()
+            if (last_detector_result is None or process_now - last_detector_process_time >= ANALYSIS_INTERVAL_SEC or last_detector_break_state != is_break):
+                last_detector_result = detector.process_frame(frame, detected_phones=detected_phones, is_pomodoro_break=is_break)
+                last_detector_process_time = process_now
+                last_detector_break_state = is_break
+            result = dict(last_detector_result)
+            result["focus_score"] = detector.get_focus_score()
     
-            # 3.5 Giám sát thao tác trên Facebook / YouTube / Mạng xã hội trên máy tính
-            web_distract = app_monitor.check_distraction(is_pomodoro_break=is_break)
+            # 3.5 Giám sát tiêu đề/đầu vào 10 lần/giây, độc lập FPS camera.
+            monitor_now = time.monotonic()
+            if (monitor_now - last_app_monitor_check >= 0.1) or (last_app_monitor_break_state != is_break):
+                cached_web_distract = app_monitor.check_distraction(is_pomodoro_break=is_break)
+                last_app_monitor_check = monitor_now
+                last_app_monitor_break_state = is_break
+            web_distract = cached_web_distract
             is_web_alerting = bool(web_distract and web_distract["should_alert"])
     
-            # Nếu người dùng vừa tắt Facebook/YouTube -> Dừng cảnh báo giọng nói NGAY LẬP TỨC (Zero Lag)!
+            # Khi người dùng vừa tắt Facebook/YouTube -> Dừng cảnh báo ở nhịp giám sát kế tiếp.
             if last_web_alerting and not is_web_alerting:
                 alert_mgr.stop(min_play_sec=0, fade_ms=150)
     
@@ -498,6 +516,10 @@ def run_focus_guard():
             pass
         try:
             phone_detector.stop()
+        except Exception:
+            pass
+        try:
+            detector.stop()
         except Exception:
             pass
         if cap is not None:

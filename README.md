@@ -70,8 +70,8 @@
 
 11. **🍃 Chế độ giảm tải CPU:**
     * Giới hạn một số luồng BLAS, OpenCV và PyTorch; MediaPipe Tasks không có thiết lập Python để khóa tổng CPU của ứng dụng.
-    * Giới hạn nhịp xử lý camera ở 6 FPS, giảm còn 3 FPS trong giờ nghỉ Pomodoro.
-    * MediaPipe suy luận khoảng 1.5 lần/giây; YOLO quét điện thoại tối đa khoảng 1 lần/giây. Tần suất suy luận giảm khoảng 25% so với trước, đổi lại cảnh báo có thể chậm thêm tối đa khoảng 0.5–1 giây.
+    * Giữ preview camera/HUD ở 30 FPS, giảm còn 15 FPS trong giờ nghỉ; phân tích trạng thái chạy 10 lần/giây.
+    * MediaPipe chạy khoảng 1 lần/giây trên ảnh 480×360; YOLO quét điện thoại tối đa khoảng 1 lần/giây. Worker bỏ frame khi đang suy luận thay vì tích hàng đợi; dữ liệu mặt cũ hơn 2,5 giây bị loại bỏ. Hai nhịp AI độc lập với preview; pose mới có thể chậm khoảng 1 giây, còn xác nhận mất mặt có thể chậm hơn.
 
 ---
 
