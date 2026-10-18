@@ -33,6 +33,7 @@ venv.bak/
 focus_history.json
 study_zone.json
 *.log
+Push_To_GitHub.bat
 
 # IDE & Editor Settings
 .vscode/
