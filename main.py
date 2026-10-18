@@ -34,6 +34,47 @@ from app_monitor import AppDistractionMonitor
 
 WIN_TITLE = "FocusGuard - AI Distraction & Drowsiness Detector"
 
+_instance_mutex = None
+
+def enforce_single_instance():
+    """
+    Đảm bảo chỉ có duy nhất 1 phiên bản FocusGuard PRO hoạt động cùng lúc.
+    Ngăn chặn hoàn toàn tình trạng mở 2 app cùng lúc làm nghẽn webcam dẫn tới màn hình đen
+    và liên tục báo sai 'quay lại bàn học'.
+    """
+    global _instance_mutex
+    ERROR_ALREADY_EXISTS = 183
+    mutex_name = "FocusGuard_PRO_SingleInstance_Mutex_v2"
+
+    try:
+        _instance_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+        last_error = ctypes.windll.kernel32.GetLastError()
+        if last_error == ERROR_ALREADY_EXISTS:
+            user32 = ctypes.windll.user32
+            hwnd = user32.FindWindowW(None, WIN_TITLE)
+            if hwnd:
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+            user32.MessageBoxW(
+                0,
+                "FocusGuard PRO hiện đang chạy trên máy tính rồi bạn nhé!\n\n"
+                "Cửa sổ ứng dụng đã được đưa lên phía trước để bạn tiếp tục buổi học.",
+                "FocusGuard PRO - Ứng Dụng Đang Chạy",
+                0x40 | 0x00  # MB_ICONINFORMATION | MB_OK
+            )
+            sys.exit(0)
+    except Exception:
+        pass
+
+def cleanup_single_instance():
+    global _instance_mutex
+    if _instance_mutex:
+        try:
+            ctypes.windll.kernel32.CloseHandle(_instance_mutex)
+            _instance_mutex = None
+        except Exception:
+            pass
+
 def run_focus_guard():
     print("=" * 65)
     print("        FOCUSGUARD PRO - HỆ THỐNG TRỢ LÝ HỌC TẬP THỊ GIÁC AI")
@@ -217,6 +258,14 @@ def run_focus_guard():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
 
         # 5. Xử lý cảnh báo (Giọng nói + Windows Toast)
+        if result.get("label") == "WEBCAM BỊ CHE / TỐI ĐEN":
+            toast_mgr.show_toast(
+                "FocusGuard Lưu Ý",
+                "📷 Webcam đang bị tối đen hoặc đóng nắp che camera (E-Shutter)! Vui lòng gạt mở nắp camera hoặc bật đèn phòng.",
+                "black_cam",
+                cooldown=20.0
+            )
+
         if result["alert"] and not is_break:
             if not last_alert_state:
                 alert_type = result.get("alert_type")
@@ -236,7 +285,8 @@ def run_focus_guard():
                 last_alert_state = True
 
             if not is_muted and result.get("alert_type"):
-                alert_mgr.play_voice(result["alert_type"], cooldown=3.5)
+                voice_cd = 7.0 if result["alert_type"] == "AWAY" else 3.5
+                alert_mgr.play_voice(result["alert_type"], cooldown=voice_cd)
         else:
             last_alert_state = False
 
@@ -340,6 +390,7 @@ def run_focus_guard():
     history_mgr.print_report(saved_session)
 
 if __name__ == "__main__":
+    enforce_single_instance()
     try:
         run_focus_guard()
     except Exception as e:
@@ -355,3 +406,5 @@ if __name__ == "__main__":
             )
         except Exception:
             pass
+    finally:
+        cleanup_single_instance()

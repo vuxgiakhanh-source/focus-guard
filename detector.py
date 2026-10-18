@@ -32,7 +32,7 @@ class FocusDetector:
                  ear_threshold=0.18,          # Ngưỡng mắt hợp lý
                  drowsy_limit_sec=2.0,        # Nhắm mắt 2s mới báo buồn ngủ
                  distracted_limit_sec=3.0,    # Lệch khỏi vùng học quá 3s mới nhắc
-                 away_limit_sec=4.0):         # Rời bàn quá 4s mới nhắc
+                 away_limit_sec=7.0):         # Rời bàn quá 7s mới nhắc (tránh báo nhầm khi cúi nhặt bút/chỉnh tư thế)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản 2):
         1. MediaPipe suy luận xen kẽ khung hình (Inference Decimation: 15 FPS AI)
@@ -119,6 +119,8 @@ class FocusDetector:
         self.last_detection_data = None
         self.last_brightness_check_time = 0
         self.is_dark_env = False
+        self.is_pitch_black = False
+        self.missing_face_count = 0
 
         self.eye_closed_start = None
         self.distracted_start = None
@@ -211,15 +213,16 @@ class FocusDetector:
     def check_lighting(self, frame_bgr):
         """Kiểm tra độ sáng bằng cách lấy mẫu thưa 1/400 pixel (chỉ tốn 0.004ms)"""
         now = time.time()
-        if now - self.last_brightness_check_time > 1.0:
+        if now - self.last_brightness_check_time > 0.5:
             self.last_brightness_check_time = now
             # Kênh Green (kênh 1) phản ánh 59% độ chói chuẩn mắt người
             sampled_mean = float(np.mean(frame_bgr[::20, ::20, 1]))
             self.is_dark_env = (sampled_mean < 55.0)
+            self.is_pitch_black = (sampled_mean < 5.0)
 
     def apply_clahe_enhancement(self, frame_bgr):
-        """Chỉ thực hiện CLAHE khi phòng thực sự tối để tiết kiệm 100% thời gian xử lý"""
-        if not self.is_dark_env:
+        """Chỉ thực hiện CLAHE khi phòng tối vừa phải (không chạy khi nắp camera đóng / đen hoàn toàn)"""
+        if (not self.is_dark_env) or self.is_pitch_black:
             return frame_bgr
         lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
@@ -363,45 +366,75 @@ class FocusDetector:
         # 3. MediaPipe suy luận xen kẽ: Chạy cách 1 khung hình (15 FPS AI, giảm 50% CPU liên tục)
         is_infer_frame = (self.frame_idx % 2 == 0)
         if is_infer_frame:
-            enhanced_frame = self.apply_clahe_enhancement(frame_bgr)
-            if self.frame_rgb_buffer.shape[:2] != (h, w):
-                self.frame_rgb_buffer = np.empty((h, w, 3), dtype=np.uint8)
-            cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2RGB, dst=self.frame_rgb_buffer)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=self.frame_rgb_buffer)
-            result = self.landmarker.detect(mp_image)
-
-            if not result.face_landmarks or len(result.face_landmarks) == 0:
+            if self.is_pitch_black:
                 self.last_detection_data = None
             else:
-                landmarks = result.face_landmarks[0]
-                raw_ear_l = self.calculate_ear(landmarks, self.LEFT_EYE, w, h)
-                raw_ear_r = self.calculate_ear(landmarks, self.RIGHT_EYE, w, h)
-                avg_ear = self.smooth_ear.update((raw_ear_l + raw_ear_r) / 2.0)
-                mar = self.calculate_mar(landmarks, w, h)
+                enhanced_frame = self.apply_clahe_enhancement(frame_bgr)
+                if self.frame_rgb_buffer.shape[:2] != (h, w):
+                    self.frame_rgb_buffer = np.empty((h, w, 3), dtype=np.uint8)
+                cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2RGB, dst=self.frame_rgb_buffer)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=self.frame_rgb_buffer)
+                result = self.landmarker.detect(mp_image)
 
-                raw_pitch, raw_yaw, raw_roll, _, _ = self.estimate_head_pose(landmarks, w, h)
-                pitch = self.smooth_pitch.update(raw_pitch)
-                yaw = self.smooth_yaw.update(raw_yaw)
-                roll = self.smooth_roll.update(raw_roll)
+                if not result.face_landmarks or len(result.face_landmarks) == 0:
+                    self.missing_face_count += 1
+                    if self.missing_face_count >= 2:
+                        self.last_detection_data = None
+                else:
+                    self.missing_face_count = 0
+                    landmarks = result.face_landmarks[0]
+                    raw_ear_l = self.calculate_ear(landmarks, self.LEFT_EYE, w, h)
+                    raw_ear_r = self.calculate_ear(landmarks, self.RIGHT_EYE, w, h)
+                    avg_ear = self.smooth_ear.update((raw_ear_l + raw_ear_r) / 2.0)
+                    mar = self.calculate_mar(landmarks, w, h)
 
-                raw_gaze = self.calculate_iris_gaze(landmarks, w, h)
-                gaze_ratio = self.smooth_gaze.update(raw_gaze)
+                    raw_pitch, raw_yaw, raw_roll, _, _ = self.estimate_head_pose(landmarks, w, h)
+                    pitch = self.smooth_pitch.update(raw_pitch)
+                    yaw = self.smooth_yaw.update(raw_yaw)
+                    roll = self.smooth_roll.update(raw_roll)
 
-                self.last_detection_data = {
-                    "landmarks": landmarks,
-                    "ear": avg_ear,
-                    "mar": mar,
-                    "pitch": pitch,
-                    "yaw": yaw,
-                    "roll": roll,
-                    "gaze_ratio": gaze_ratio
-                }
+                    raw_gaze = self.calculate_iris_gaze(landmarks, w, h)
+                    gaze_ratio = self.smooth_gaze.update(raw_gaze)
+
+                    self.last_detection_data = {
+                        "landmarks": landmarks,
+                        "ear": avg_ear,
+                        "mar": mar,
+                        "pitch": pitch,
+                        "yaw": yaw,
+                        "roll": roll,
+                        "gaze_ratio": gaze_ratio
+                    }
 
         # 4. Nếu không thấy mặt
         if self.last_detection_data is None:
             self.smooth_pitch.reset()
             self.smooth_yaw.reset()
             self.smooth_roll.reset()
+
+            # Trường hợp đặc biệt: Webcam bị tối đen hoặc đóng nắp che camera (E-Shutter)
+            if getattr(self, "is_pitch_black", False):
+                self.away_start = None
+                return {
+                    "status": "WARNING",
+                    "label": "WEBCAM BỊ CHE / TỐI ĐEN",
+                    "reason": "Vui lòng gạt mở nắp che camera (E-Shutter)",
+                    "alert": False,
+                    "alert_type": None,
+                    "ear": 0.0,
+                    "mar": 0.0,
+                    "pitch": 0.0,
+                    "yaw": 0.0,
+                    "roll": 0.0,
+                    "gaze_ratio": 0.5,
+                    "ear_threshold": self.ear_threshold,
+                    "study_zone": self.study_zone,
+                    "is_recording_zone": self.is_recording_zone,
+                    "record_time_left": 0.0,
+                    "is_study_zone_set": self.is_study_zone_set,
+                    "focus_score": self.get_focus_score(),
+                    "landmarks": None
+                }
 
             if self.away_start is None:
                 self.away_start = now
