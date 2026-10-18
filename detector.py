@@ -124,6 +124,7 @@ class FocusDetector:
         self.distracted_start = None
         self.away_start = None
         self.phone_detected_start = None
+        self.last_phone_seen_time = 0.0
         self.gaze_away_start = None
 
         self.total_frames = 0
@@ -159,8 +160,8 @@ class FocusDetector:
     def finalize_zone_learning(self):
         if len(self.recorded_samples["yaw"]) > 10:
             self.study_zone = {
-                "yaw_min": round(float(min(self.recorded_samples["yaw"]) - 10.0), 1),
-                "yaw_max": round(float(max(self.recorded_samples["yaw"]) + 10.0), 1),
+                "yaw_min": -180.0,
+                "yaw_max": max(70.0, round(float(max(self.recorded_samples["yaw"]) + 10.0), 1)),
                 "pitch_min": round(float(min(self.recorded_samples["pitch"]) - 12.0), 1),
                 "pitch_max": round(float(max(self.recorded_samples["pitch"]) + 10.0), 1),
                 "roll_min": round(float(min(self.recorded_samples["roll"]) - 10.0), 1),
@@ -333,10 +334,10 @@ class FocusDetector:
         has_phone = False
         if detected_phones:
             for (x1, y1, x2, y2, conf) in detected_phones:
-                w = abs(x2 - x1)
-                h = abs(y2 - y1)
+                pw = abs(x2 - x1)
+                ph = abs(y2 - y1)
                 # Kích thước hợp lý cho điện thoại trên tay: chiều dài >= 35px, diện tích >= 600px
-                if max(w, h) >= 35 and (w * h) >= 600:
+                if max(pw, ph) >= 35 and (pw * ph) >= 600:
                     has_phone = True
                     break
 

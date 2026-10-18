@@ -125,11 +125,17 @@ def run_focus_guard():
     # Tự động bật học góc học tập 60s lần đầu tiên nếu chưa có file
     auto_started_learning = False
 
+    failed_frames_count = 0
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("[-] Không đọc được frame từ webcam.")
-            break
+            failed_frames_count += 1
+            if failed_frames_count > 10:
+                print("[-] Không đọc được frame từ webcam (mất tín hiệu camera).")
+                break
+            time.sleep(0.03)
+            continue
+        failed_frames_count = 0
 
         cv2.flip(frame, 1, dst=frame)
 
@@ -159,6 +165,9 @@ def run_focus_guard():
         # 3.5 Giám sát thao tác trên Facebook / YouTube / Mạng xã hội trên máy tính
         web_distract = app_monitor.check_distraction(is_pomodoro_break=is_break)
         if web_distract and web_distract["should_alert"]:
+            if result.get("status") == "FOCUSED":
+                detector.focused_frames = max(0, detector.focused_frames - 1)
+                result["focus_score"] = detector.get_focus_score()
             result["status"] = "DISTRACTED"
             result["label"] = f"PHÁT HIỆN ĐANG DÙNG {web_distract['label'].upper()}!"
             result["reason"] = f"Đang thao tác trên {web_distract['label']} ({web_distract['duration']:.1f}s)!"
@@ -290,9 +299,10 @@ def run_focus_guard():
     )
 
     try:
+        dur_mins, dur_secs = divmod(int(time.time() - start_time), 60)
         toast_mgr.show_toast(
             "FocusGuard PRO",
-            f"🎉 Phiên học kết thúc! Thời gian: {saved_session['duration_str']} | Tập trung: {final_score:.0f}%\nĐã lưu vào lịch sử học tập!",
+            f"🎉 Phiên học kết thúc! Thời gian: {dur_mins}p {dur_secs}s | Tập trung: {final_score:.0f}%\nĐã lưu vào lịch sử học tập!",
             toast_key="session_done",
             cooldown=0.0
         )

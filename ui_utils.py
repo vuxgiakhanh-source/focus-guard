@@ -66,7 +66,7 @@ class HUDRenderer:
         strip_pil = Image.fromarray(cv2.cvtColor(strip_bgr, cv2.COLOR_BGR2RGB))
         d_btn = ImageDraw.Draw(strip_pil)
 
-        mute_label = "[M] Bật mic" if is_muted else "[M] Âm thanh"
+        mute_label = "[M] Mở tiếng" if is_muted else "[M] Âm thanh"
         mute_bg = (70, 40, 40) if is_muted else (60, 50, 70)
 
         buttons_def = [
@@ -191,6 +191,22 @@ class HUDRenderer:
             d_sc = ImageDraw.Draw(sc_pil)
             d_sc.text((12, 6), "ĐỘ TẬP TRUNG", font=self.get_font(13), fill=(200, 200, 200))
             d_sc.text((12, 22), f"{score}%", font=self.get_font(26), fill=theme_rgb)
+            # Vẽ biểu đồ Sparkline mini xu hướng tập trung thời gian thực (20s gần nhất)
+            if len(self.score_history) >= 2:
+                sp_x1 = 125
+                sp_y1 = 16
+                sp_w = 72
+                sp_h = 36
+                d_sc.rectangle([sp_x1, sp_y1, sp_x1 + sp_w, sp_y1 + sp_h], fill=(15, 20, 26), outline=(60, 65, 75))
+                pts = []
+                n = len(self.score_history)
+                for i, val in enumerate(self.score_history):
+                    px = sp_x1 + int((i / max(1, n - 1)) * sp_w)
+                    norm_val = max(0.0, min(100.0, float(val))) / 100.0
+                    py = sp_y1 + sp_h - int(norm_val * (sp_h - 4)) - 2
+                    pts.append((px, py))
+                d_sc.line(pts, fill=theme_rgb, width=2)
+
             d_sc.text((12, 62), pomo_str, font=self.get_font(12), fill=pomo_col)
             d_sc.text((12, 82), f"Thời gian học: {mins:02d}:{secs:02d}", font=self.get_font(12), fill=(160, 160, 160))
             sc_roi[:] = cv2.cvtColor(np.array(sc_pil), cv2.COLOR_RGB2BGR)
