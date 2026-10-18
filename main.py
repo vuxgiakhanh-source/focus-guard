@@ -98,7 +98,7 @@ def run_focus_guard():
         print(f"[-] Lỗi khởi tạo mô hình FaceMesh: {e}")
         return
 
-    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.28)
+    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.36)
     alert_mgr = SoundAlertManager()
     hud = HUDRenderer()
     pomodoro = PomodoroTimer(work_min=25, break_min=5)

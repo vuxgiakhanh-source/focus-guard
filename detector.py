@@ -30,8 +30,8 @@ class FocusDetector:
     def __init__(self,
                  model_path="face_landmarker.task",
                  ear_threshold=0.18,          # Ngưỡng mắt hợp lý
-                 drowsy_limit_sec=2.0,        # Nhắm mắt 2s mới báo buồn ngủ
-                 distracted_limit_sec=3.0,    # Lệch khỏi vùng học quá 3s mới nhắc
+                 drowsy_limit_sec=2.5,        # Nhắm mắt 2.5s mới báo buồn ngủ (tránh chớp mắt chậm/suy nghĩ)
+                 distracted_limit_sec=4.0,    # Lệch khỏi vùng học quá 4s mới nhắc (cho phép vươn vai/nhìn đồng hồ)
                  away_limit_sec=7.0):         # Rời bàn quá 7s mới nhắc (tránh báo nhầm khi cúi nhặt bút/chỉnh tư thế)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản 2):
@@ -476,6 +476,7 @@ class FocusDetector:
         # 5. NẾU ĐANG TRONG CHẾ ĐỘ HỌC GÓC HỌC TẬP (60 GIÂY)
         record_time_left = 0.0
         if self.is_recording_zone:
+            self.focused_frames += 1
             self.recorded_samples["yaw"].append(yaw)
             self.recorded_samples["pitch"].append(pitch)
             self.recorded_samples["roll"].append(roll)
@@ -516,8 +517,12 @@ class FocusDetector:
         is_inside_study_zone = not is_turned_away
 
         # Gaze tracking: Chỉ cảnh báo khi đầu đang thẳng nhưng liếc mắt quá mạnh sang hai bên
-        is_gaze_diverted = (gaze_ratio > 0.82 or gaze_ratio < 0.18) and abs(yaw) < 25.0
-        is_eyes_closed = avg_ear < self.ear_threshold
+        is_gaze_diverted = (gaze_ratio > 0.88 or gaze_ratio < 0.12) and abs(yaw) < 20.0
+
+        # Thích ứng góc cúi đầu đọc sách / ghi chép: Khi cúi đầu nhìn xuống bàn (pitch < -12°), mí mắt tự nhiên cụp xuống
+        # Hạ ngưỡng EAR xuống 72% để không bao giờ bị báo buồn ngủ oan khi đang chăm chú làm bài!
+        effective_ear_thresh = (self.ear_threshold * 0.72) if pitch < -12.0 else self.ear_threshold
+        is_eyes_closed = avg_ear < effective_ear_thresh
         is_yawning = mar > 0.70
 
         status = "FOCUSED"
@@ -533,7 +538,7 @@ class FocusDetector:
             self.last_phone_seen_time = now
             phone_dur = now - self.phone_detected_start
 
-            if phone_dur >= 0.75:
+            if phone_dur >= 1.5:
                 status = "DISTRACTED"
                 label = "PHÁT HIỆN ĐIỆN THOẠI!"
                 reason = "Đang cầm điện thoại trên tay!"
@@ -544,10 +549,10 @@ class FocusDetector:
                 label = "CẢNH BÁO ĐIỆN THOẠI"
                 reason = "Phát hiện điện thoại xuất hiện..."
         else:
-            # Cho phép ân hạn 0.6 giây để chống rớt frame chớp tắt
-            if hasattr(self, 'last_phone_seen_time') and (now - self.last_phone_seen_time < 0.6) and self.phone_detected_start:
+            # Cho phép ân hạn 0.8 giây để chống rớt frame chớp tắt
+            if hasattr(self, 'last_phone_seen_time') and (now - self.last_phone_seen_time < 0.8) and self.phone_detected_start:
                 phone_dur = now - self.phone_detected_start
-                if phone_dur >= 0.75:
+                if phone_dur >= 1.5:
                     status = "DISTRACTED"
                     label = "PHÁT HIỆN ĐIỆN THOẠI!"
                     reason = "Đang cầm điện thoại trên tay!"
@@ -607,7 +612,7 @@ class FocusDetector:
             if self.gaze_away_start is None:
                 self.gaze_away_start = now
             gaze_dur = now - self.gaze_away_start
-            if gaze_dur > 3.0:
+            if gaze_dur > 4.0:
                 status = "DISTRACTED"
                 label = "ĐẢO MẮT RA NGOÀI"
                 reason = f"Mắt liếc ra khỏi bàn học ({gaze_dur:.1f}s)!"
@@ -623,7 +628,7 @@ class FocusDetector:
             reason = "Phát hiện ngáp, hãy nghỉ ngơi một chút"
             alert_type = "YAWN"
 
-        if status == "FOCUSED":
+        if self.is_recording_zone or status == "FOCUSED":
             self.focused_frames += 1
 
         return {

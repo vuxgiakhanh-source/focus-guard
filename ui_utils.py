@@ -30,7 +30,7 @@ class HUDRenderer:
                 break
 
         self.font_cache = {}
-        self.score_history = []
+        self.score_history = [100.0, 100.0]
         self.last_history_sample = 0
         self.buttons = {}
 
@@ -225,12 +225,12 @@ class HUDRenderer:
             d_sc.text((10, 20), f"{score:.0f}%", font=self.get_font(26), fill=theme_rgb)
 
             # Vẽ biểu đồ Sparkline mini xu hướng tập trung mượt mà
+            sp_x1 = 92
+            sp_y1 = 18
+            sp_w = 70
+            sp_h = 32
+            d_sc.rounded_rectangle([sp_x1, sp_y1, sp_x1 + sp_w, sp_y1 + sp_h], radius=4, fill=(12, 16, 22), outline=(45, 55, 70), width=1)
             if len(self.score_history) >= 2:
-                sp_x1 = 92
-                sp_y1 = 18
-                sp_w = 70
-                sp_h = 32
-                d_sc.rounded_rectangle([sp_x1, sp_y1, sp_x1 + sp_w, sp_y1 + sp_h], radius=4, fill=(12, 16, 22), outline=(45, 55, 70), width=1)
                 pts = []
                 n = len(self.score_history)
                 for i, val in enumerate(self.score_history):

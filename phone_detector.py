@@ -42,10 +42,10 @@ class PhoneDetector:
             # Khởi động trước (Warmup) mô hình để nạp trọng số vào CPU L2/L3 cache
             with torch.inference_mode():
                 dummy = np.zeros((320, 320, 3), dtype=np.uint8)
-                self.model.predict(dummy, classes=[67, 65], conf=0.5, verbose=False, imgsz=320)
+                self.model.predict(dummy, classes=[67], conf=0.5, verbose=False, imgsz=320)
 
             self.is_ready = True
-            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (conf=0.28, imgsz=320, 1 thread)!")
+            print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (conf=0.36, imgsz=320, 1 thread)!")
             threading.Thread(target=self._inference_loop, daemon=True).start()
         except Exception as e:
             print(f"[-] Không thể nạp YOLOv8: {e}")
@@ -77,10 +77,10 @@ class PhoneDetector:
                 self.last_infer_time = time.time()
                 try:
                     with self.torch.inference_mode():
-                        # Lớp 67: cell phone, lớp 65: remote control
+                        # Lớp 67: cell phone (chỉ nhận diện điện thoại, loại bỏ remote/vật dụng khác)
                         results = self.model.predict(
                             source=frame_to_process,
-                            classes=[67, 65],
+                            classes=[67],
                             conf=self.conf_thresh,
                             verbose=False,
                             imgsz=320
