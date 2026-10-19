@@ -145,6 +145,7 @@ class PhoneDetector:
         self.has_error = False
         self.latest_boxes = []
         self.last_detected_time = 0.0
+        self.last_person_seen_time = 0.0
         self.lock = threading.Lock()
         self.is_running = True
         
@@ -184,7 +185,7 @@ class PhoneDetector:
             # Khởi động trước (Warmup) mô hình để nạp trọng số vào CPU L2/L3 cache
             with torch.inference_mode():
                 dummy = np.zeros((256, 256, 3), dtype=np.uint8)
-                self.model.predict(dummy, classes=[67], conf=0.5, verbose=False, imgsz=256)
+                self.model.predict(dummy, classes=[0, 67], conf=0.5, verbose=False, imgsz=256)
 
             if not self.is_running:
                 return
@@ -347,28 +348,36 @@ class PhoneDetector:
                 with self.torch.inference_mode():
                     results = self.model.predict(
                         source=frame_to_process,
-                        classes=[67],
+                        classes=[0, 67],
                         conf=self.conf_thresh,
                         verbose=False,
                         imgsz=256
                     )
 
                 boxes = []
+                person_detected = False
                 if results and len(results) > 0:
                     result = results[0]
                     if result.boxes is not None and len(result.boxes) > 0:
                         for box in result.boxes:
-                            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                            cls_id = int(box.cls[0])
                             conf = float(box.conf[0])
-                            is_valid, has_hand_contact = self._validate_phone_candidate(
-                                frame_to_process, x1, y1, x2, y2, conf
-                            )
-                            if is_valid:
-                                boxes.append((x1, y1, x2, y2, conf, has_hand_contact))
+                            if cls_id == 0:
+                                if conf >= 0.35:
+                                    person_detected = True
+                            elif cls_id == 67:
+                                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                                is_valid, has_hand_contact = self._validate_phone_candidate(
+                                    frame_to_process, x1, y1, x2, y2, conf
+                                )
+                                if is_valid:
+                                    boxes.append((x1, y1, x2, y2, conf, has_hand_contact))
 
                 tracked = self.tracker.update(boxes, now, frame_h=frame_to_process.shape[0])
                 with self.lock:
                     if self.is_running:
+                        if person_detected:
+                            self.last_person_seen_time = now
                         if tracked:
                             self.latest_boxes = tracked
                             self.last_detected_time = now
@@ -381,6 +390,11 @@ class PhoneDetector:
             finally:
                 with self.lock:
                     self.inference_busy = False
+
+    def is_person_present(self, ttl=3.0):
+        """Trả về True nếu YOLO phát hiện có người ngồi trước camera trong vòng ttl giây gần đây"""
+        with self.lock:
+            return (time.monotonic() - self.last_person_seen_time) <= ttl
 
     def get_detected_phones(self):
         """Trả về danh sách các điện thoại nhận diện được dạng (x1, y1, x2, y2, conf, is_held)"""

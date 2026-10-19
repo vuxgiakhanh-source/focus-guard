@@ -324,17 +324,21 @@ def run_focus_guard():
             is_break = pomodoro.is_active and (pomo_state == "BREAK")
             frame_interval = 1.0 / (BREAK_TARGET_FPS if is_break else TARGET_FPS)
     
-            # 2. Quét điện thoại ngầm bằng YOLOv8 (Tự động ngủ 100% trong giờ giải lao để làm mát máy)
+            # 2. Quét người & điện thoại ngầm bằng YOLOv8 (Tự động ngủ 100% trong giờ giải lao để làm mát máy)
             if not is_break:
                 phone_detector.update_frame(frame)
                 detected_phones = phone_detector.get_detected_phones()
+                has_person = phone_detector.is_person_present()
             else:
                 detected_phones = []
+                has_person = False
     
             # Phân tích trạng thái 10 Hz; luồng camera/HUD vẫn chạy ở 30 FPS.
             process_now = time.monotonic()
             if (last_detector_result is None or process_now - last_detector_process_time >= ANALYSIS_INTERVAL_SEC or last_detector_break_state != is_break):
-                last_detector_result = detector.process_frame(frame, detected_phones=detected_phones, is_pomodoro_break=is_break)
+                last_detector_result = detector.process_frame(
+                    frame, detected_phones=detected_phones, is_pomodoro_break=is_break, has_person=has_person
+                )
                 last_detector_process_time = process_now
                 last_detector_break_state = is_break
             result = dict(last_detector_result)

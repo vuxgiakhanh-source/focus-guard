@@ -458,6 +458,49 @@ class TestDeskSleepingDetection(unittest.TestCase):
         self.assertIn("CHỐT SỚM", msg)
         self.assertTrue(detector.is_study_zone_set)
 
+    def test_bowed_writing_with_person_present(self):
+        """Khi đang ngồi thẳng rồi cúi nhanh (last_seen_pitch=0.0) hoặc YOLO phát hiện người,
+        việc mất mặt 30s vẫn là ĐANG CÚI VIẾT BÀI, KHÔNG báo RỜI BÀN (AWAY)"""
+        from detector import FocusDetector
+        detector = FocusDetector()
+        now = time.monotonic()
+        dummy_frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+
+        # Người dùng đang ngồi thẳng (pitch = 0.0), không kịp ghi nhận cúi thì đã khuất mặt
+        detector.last_seen_pitch = 0.0
+        detector.last_seen_reading = False
+        detector.last_detection_data = None
+        detector.away_start = now - 30.0  # Đã mất mặt 30s (> away_limit_sec 25s)
+
+        # 1. Trường hợp có YOLO báo person = True: Người vẫn ngồi ở bàn
+        res = detector.process_frame(dummy_frame, has_person=True)
+        self.assertEqual(res["status"], "FOCUSED")
+        self.assertIn("CÚI VIẾT BÀI", res["label"])
+        self.assertFalse(res["alert"])
+
+        # 2. Trường hợp không truyền has_person nhưng last_seen_pitch <= 8.0 (ngồi học bình thường trước khi cúi)
+        res = detector.process_frame(dummy_frame)
+        self.assertEqual(res["status"], "FOCUSED")
+        self.assertIn("CÚI VIẾT BÀI", res["label"])
+        self.assertFalse(res["alert"])
+
+    def test_away_detection_when_person_leaves(self):
+        """Khi người dùng thực sự rời khỏi bàn (ngẩng lên rồi đi, last_seen_pitch > 8.0 và has_person=False) > 25s thì báo AWAY"""
+        from detector import FocusDetector
+        detector = FocusDetector()
+        now = time.monotonic()
+        dummy_frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+
+        detector.last_seen_pitch = 15.0  # Ngẩng đầu đứng dậy
+        detector.last_seen_reading = False
+        detector.last_detection_data = None
+        detector.away_start = now - 26.0  # > 25s away_limit_sec
+
+        res = detector.process_frame(dummy_frame, has_person=False)
+        self.assertEqual(res["status"], "AWAY")
+        self.assertTrue(res["alert"])
+        self.assertEqual(res["alert_type"], "AWAY")
+
 
 class TestAudioAlertManager(unittest.TestCase):
     def test_mci_playback_loop_duration(self):

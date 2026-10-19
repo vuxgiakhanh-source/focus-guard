@@ -78,7 +78,7 @@ class FocusDetector:
                  ear_threshold=0.18,          # Ngưỡng mắt mặc định
                  drowsy_limit_sec=4.0,        # Nhắm mắt >= 4.0s mới coi là ngủ gật (NHTSA / ISO micro-sleep)
                  distracted_limit_sec=5.0,    # Quay mặt đi >= 5.0s mới tính là mất tập trung
-                 away_limit_sec=18.0):        # Rời bàn >= 18s mới bắt đầu báo (cho phép vươn vai, lấy nước)
+                 away_limit_sec=25.0):        # Rời bàn >= 25s mới bắt đầu báo (cho phép vươn vai, lấy nước)
         """
         FocusDetector SIÊU TỐI ƯU HÓA (Phiên bản World-Class DMS):
         1. MediaPipe suy luận khoảng 1 lần/giây trên ảnh thu nhỏ, độc lập FPS hiển thị
@@ -620,7 +620,7 @@ class FocusDetector:
 
         return pitch, yaw, roll, rvec, tvec
 
-    def process_frame(self, frame_bgr, detected_phones=None, is_pomodoro_break=False):
+    def process_frame(self, frame_bgr, detected_phones=None, is_pomodoro_break=False, has_person=None):
         h, w, _ = frame_bgr.shape
         self.total_frames += 1
         now = time.monotonic()
@@ -803,11 +803,16 @@ class FocusDetector:
             away_dur = now - self.away_start
 
             # ĐẶC QUYỀN CÚI VIẾT BÀI (DESK WRITING MODE):
-            # Người dùng cúi thấp đầu viết bài trong vở, camera chỉ thấy đỉnh đầu/tóc (không thấy mặt)
-            # ĐÂY LÀ HÀNH VI HỌC TẬP TẬP TRUNG HOÀN TOÀN BÌNH THƯỜNG!
-            # Tuyệt đối KHÔNG BÁO BUỒN NGỦ (vì không nhìn thấy mắt nhắm).
-            was_bowed_writing = (self.last_seen_pitch < -8.0 or self.last_seen_reading)
-            if was_bowed_writing:
+            # Người dùng cúi thấp đầu viết bài trong vở, camera chỉ thấy đỉnh đầu/tóc (không thấy mặt).
+            # Dấu hiệu chắc chắn người dùng vẫn đang ở bàn học:
+            # 1. YOLO xác nhận vẫn có người ngồi trước bàn (has_person is True)
+            # 2. Hoặc trước khi khuất mặt, người dùng đang ở tư thế học bình thường / cúi đầu (last_seen_pitch <= 8.0 hoặc last_seen_reading)
+            if has_person is not None:
+                is_still_at_desk = has_person or (self.last_seen_pitch <= 8.0) or self.last_seen_reading
+            else:
+                is_still_at_desk = (self.last_seen_pitch <= 8.0) or self.last_seen_reading
+
+            if is_still_at_desk:
                 if away_dur <= self.writing_grace_sec:
                     # Trong vòng 180s (3 phút): Tập trung ghi chép bài vở bình thường
                     self._update_energy("FOCUSED", now)
