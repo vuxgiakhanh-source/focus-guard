@@ -173,7 +173,13 @@ def run_focus_guard():
     print("    (EMA FILTER + IRIS GAZE + POMODORO + TOAST + TỰ CÂN CHỈNH MẮT)")
     print("=" * 65)
 
-    history_mgr = SessionHistoryManager()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(base_dir, "face_landmarker.task")
+    yolo_path = os.path.join(base_dir, "yolov8n.pt")
+    sounds_dir = os.path.join(base_dir, "sounds")
+    history_file = os.path.join(base_dir, "focus_history.json")
+
+    history_mgr = SessionHistoryManager(history_file=history_file)
     toast_mgr = WindowsToastManager()
 
     # In thống kê lịch sử tích lũy khi khởi động
@@ -185,15 +191,15 @@ def run_focus_guard():
     print("[*] Đang khởi tạo các mô hình AI và camera...")
 
     try:
-        detector = FocusDetector(model_path="face_landmarker.task")
+        detector = FocusDetector(model_path=model_path)
     except Exception as e:
         print(f"[-] Lỗi khởi tạo mô hình FaceMesh: {e}")
         return
 
-    alert_mgr = SoundAlertManager()
+    alert_mgr = SoundAlertManager(sounds_dir=sounds_dir)
     hud = HUDRenderer()
     pomodoro = PomodoroTimer(work_min=25, break_min=5)
-    app_monitor = AppDistractionMonitor(active_operate_thresh_sec=6.0, idle_timeout_sec=2.0)
+    app_monitor = AppDistractionMonitor()
 
     # Khởi tạo camera với DirectShow (mở cực nhanh <0.2s trên Windows) và tự động thử camera 1 nếu camera 0 bận
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -223,7 +229,7 @@ def run_focus_guard():
         return
 
     # Chỉ nạp YOLO sau khi mở được camera để tránh dùng CPU vô ích khi không có camera.
-    phone_detector = PhoneDetector(model_name="yolov8n.pt", conf_thresh=0.35, inference_interval_sec=0.50)
+    phone_detector = PhoneDetector(model_name=yolo_path, conf_thresh=0.35, inference_interval_sec=0.50)
 
     # Cài đặt độ phân giải chuẩn 640x480 và triệt tiêu độ trễ bộ đệm (Zero Buffer Delay)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -448,6 +454,9 @@ def run_focus_guard():
             # 7. Vẽ giao diện HUD chuyên nghiệp
             elapsed_sec = time.time() - start_time
             pomodoro_info = (pomo_state, pomo_time_left) if pomodoro.is_active else None
+            phone_status = "ERROR" if getattr(phone_detector, 'has_error', False) else ("OK" if phone_detector.is_ready else "LOADING")
+            audio_status = alert_mgr.get_backend_status()
+
             frame = hud.draw_hud(
                 frame,
                 result,
@@ -456,7 +465,9 @@ def run_focus_guard():
                 is_muted=is_muted,
                 alert_msg=active_msg,
                 show_stats=show_stats,
-                stats_data=stats_data
+                stats_data=stats_data,
+                phone_status=phone_status,
+                audio_status=audio_status
             )
     
             # 8. Hiển thị

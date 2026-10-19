@@ -14,11 +14,16 @@ try:
 except Exception:
     pass
 
-HISTORY_FILE = "focus_history.json"
+HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "focus_history.json")
 
 class SessionHistoryManager:
     """Quản lý lưu trữ và phân tích lịch sử các phiên học tập FocusGuard"""
-    def __init__(self, history_file=HISTORY_FILE, daily_goal_mins=120):
+    def __init__(self, history_file=None, daily_goal_mins=120):
+        if history_file is None:
+            history_file = HISTORY_FILE
+        elif not os.path.isabs(history_file):
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            history_file = os.path.join(base_dir, history_file)
         self.history_file = history_file
         self.daily_goal_mins = daily_goal_mins
         self.history_data = self._load_history()

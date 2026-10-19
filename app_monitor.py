@@ -1,20 +1,27 @@
 # -*- coding: utf-8 -*-
+import os
 import ctypes
 import time
+import re
+import unicodedata
+
+def strip_vietnamese_accents(text):
+    if not text:
+        return ""
+    nfkd = unicodedata.normalize('NFKD', text)
+    res = ''.join([c for c in nfkd if not unicodedata.combining(c)])
+    return res.replace('đ', 'd').replace('Đ', 'd')
 
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
 
-import re
-
 class AppDistractionMonitor:
     """
     Giám sát thao tác trên ứng dụng và mạng xã hội gây xao nhãng (Facebook, YouTube, TikTok...):
-    - CHỈ CẢNH BÁO SAU KHI THỰC SỰ THAO TÁC (click chuột, gõ phím, cuộn trang) liên tục khoảng 6s.
+    - CHỈ CẢNH BÁO SAU KHI THỰC SỰ THAO TÁC (click chuột, gõ phím, cuộn trang).
+    - Hỗ trợ file blocklist.txt để người dùng tự thêm từ khóa tùy biến.
     - Mở tab để đó nghe nhạc hoặc không đụng vào -> HOÀN TOÀN KHÔNG BÁO ĐỘNG.
-    - Khi đóng tab / chuyển ứng dụng khác -> vòng giám sát cập nhật trạng thái theo nhịp khoảng 0.1 giây.
     - Giờ giải lao Pomodoro -> Cho phép giải trí tự do 100%.
-    - Đọc tên cửa sổ bằng Windows User32 API; phần tải CPU chính đến từ các mô hình nhận diện.
     """
     def __init__(self, active_operate_thresh_sec=2.8, idle_timeout_sec=3.5, debounce_sec=None, **kwargs):
         if debounce_sec is not None:
@@ -26,6 +33,11 @@ class AppDistractionMonitor:
         self.active_operate_time = 0.0
         self.last_check_time = time.monotonic()
         self.current_distraction = None
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.blocklist_file = os.path.join(base_dir, "blocklist.txt")
+        self.last_blocklist_mtime = 0.0
+        self.custom_blocked_keywords = self._load_blocklist()
 
         self.user32 = ctypes.windll.user32
         self.kernel32 = ctypes.windll.kernel32
@@ -39,6 +51,21 @@ class AppDistractionMonitor:
         self.user32.GetLastInputInfo.restype = ctypes.c_bool
         self.kernel32.GetTickCount.argtypes = []
         self.kernel32.GetTickCount.restype = ctypes.c_uint32
+
+    def _load_blocklist(self):
+        """Đọc danh sách từ khóa chặn tùy chỉnh từ file blocklist.txt"""
+        keywords = []
+        if os.path.exists(self.blocklist_file):
+            try:
+                self.last_blocklist_mtime = os.path.getmtime(self.blocklist_file)
+                with open(self.blocklist_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            keywords.append(line.lower())
+            except Exception:
+                pass
+        return keywords
 
     def get_system_idle_seconds(self):
         """Số giây kể từ lần người dùng chạm chuột / gõ phím cuối cùng trên máy tính"""
@@ -91,6 +118,7 @@ class AppDistractionMonitor:
             return None
 
         t_low = title.lower().strip()
+        t_norm = strip_vietnamese_accents(t_low)
 
         # Bỏ qua cửa sổ FocusGuard chính
         if "focusguard" in t_low:
@@ -98,53 +126,90 @@ class AppDistractionMonitor:
             self.current_distraction = None
             return None
 
-        # Danh sách ứng dụng an toàn và công cụ học tập / nghiên cứu
-        safe_keywords = [
-            "visual studio code", "pycharm", "intellij", "cursor",
-            "sublime", "notepad", "excel", "powerpoint", "acrobat",
-            "pdf", "terminal", "powershell", "cmd.exe", "git bash", "google search",
-            "tìm kiếm trên google", "tìm trên google", "bing search", "github", "stackoverflow",
-            "notion", "obsidian", "anki", "quizlet", "overleaf", "latex", "calculator",
-            "desmos", "geogebra", "duolingo", "khan academy", "coursera", "edx", "udemy",
-            "leetcode", "hackerrank", "kaggle", "canva", "figma", "foxit", "adobe reader",
-            "wps office", "libreoffice", "google docs", "google sheets", "google slides",
-            "google drive", "zotero", "mendeley"
-        ]
-        safe_title_patterns = [
-            r"(?:^|[-–—|]\s*)(?:microsoft\s+)?word\s*$"
-        ]
-        if any(safe in t_low for safe in safe_keywords) or any(
-            re.search(pattern, t_low) for pattern in safe_title_patterns
-        ):
-            self.active_operate_time = 0.0
-            self.current_distraction = None
-            return None
+        # Tự động nạp lại blocklist nếu người dùng vừa sửa file blocklist.txt
+        if os.path.exists(self.blocklist_file):
+            try:
+                mtime = os.path.getmtime(self.blocklist_file)
+                if mtime != self.last_blocklist_mtime:
+                    self.custom_blocked_keywords = self._load_blocklist()
+            except Exception:
+                pass
+
+        # Kiểm tra trước xem có phải trang giải trí / mạng xã hội không
+        # để tránh bị safe_keywords (như "excel", "pdf") whitelist nhầm khi đọc bài viết Facebook về Excel
+        is_known_distraction = any(re.search(p, t_low) for p in [
+            r'\b(facebook|fb\.com|messenger|reels|tiktok|youtube|youtu\.be)\b',
+            r'\b(pornhub|xvideos|xnxx|xhamster|redtube|youporn|brazzers|onlyfans|javhd|jav|hentai|vlxx|phimsex|sex|xxx|nsfw|rule34|stripchat|chaturbate|spankbang|beeg|fapello|thothub)\b',
+            r'\b(bilibili|netflix|shopee|lazada|instagram|discord|telegram|twitch|reddit|threads|twitter|weibo|pinterest)\b'
+        ])
+        if not is_known_distraction and self.custom_blocked_keywords:
+            for kw in self.custom_blocked_keywords:
+                kw_low = kw.lower().strip()
+                kw_norm = strip_vietnamese_accents(kw_low)
+                if kw_low in t_low or kw_norm in t_norm:
+                    is_known_distraction = True
+                    break
+
+        if not is_known_distraction:
+            # Danh sách ứng dụng an toàn và công cụ học tập / nghiên cứu
+            safe_keywords = [
+                "visual studio code", "pycharm", "intellij", "cursor",
+                "sublime", "notepad", "terminal", "powershell", "cmd.exe", "git bash", "google search",
+                "tìm kiếm trên google", "tìm trên google", "bing search", "github", "stackoverflow",
+                "notion", "obsidian", "anki", "quizlet", "overleaf", "latex", "calculator",
+                "desmos", "geogebra", "duolingo", "khan academy", "coursera", "edx", "udemy",
+                "leetcode", "hackerrank", "kaggle", "canva", "figma", "foxit", "adobe reader",
+                "wps office", "libreoffice", "google docs", "google sheets", "google slides",
+                "google drive", "zotero", "mendeley"
+            ]
+            safe_title_patterns = [
+                r"(?:^|[-–—|]\s*)(?:microsoft\s+)?(word|excel|powerpoint)\s*$",
+                r"\.pdf\s*[-–—|]"
+            ]
+            if any(safe in t_low for safe in safe_keywords) or any(
+                re.search(pattern, t_low) for pattern in safe_title_patterns
+            ):
+                self.active_operate_time = 0.0
+                self.current_distraction = None
+                return None
 
         d_type = None
         d_label = None
 
+        # 0. Kiểm tra danh sách chặn tùy chọn từ blocklist.txt của người dùng
+        if self.custom_blocked_keywords:
+            for kw in self.custom_blocked_keywords:
+                kw_low = kw.lower().strip()
+                kw_norm = strip_vietnamese_accents(kw_low)
+                if kw_low in t_low or kw_norm in t_norm:
+                    d_type = "WEB_DISTRACT"
+                    d_label = f"Đã chặn: {kw}"
+                    break
+
         # 1. Nhận diện trang web người lớn / nội dung 18+ / nhạy cảm
-        adult_patterns = [
-            r'\b(pornhub|xvideos|xnxx|xhamster|redtube|youporn|brazzers|onlyfans|javhd|jav|hentai|vlxx|phimsex|sex|xxx|nsfw|rule34|stripchat|chaturbate|spankbang|beeg|fapello|thothub)\b'
-        ]
-        if any(re.search(p, t_low) for p in adult_patterns):
-            d_type = "WEB_DISTRACT"
-            d_label = "Trang web 18+ / Nhạy cảm"
+        if not d_type:
+            adult_patterns = [
+                r'\b(pornhub|xvideos|xnxx|xhamster|redtube|youporn|brazzers|onlyfans|javhd|jav|hentai|vlxx|phimsex|sex|xxx|nsfw|rule34|stripchat|chaturbate|spankbang|beeg|fapello|thothub)\b'
+            ]
+            if any(re.search(p, t_low) for p in adult_patterns):
+                d_type = "WEB_DISTRACT"
+                d_label = "Trang web 18+ / Nhạy cảm"
 
         # 2. Nhận diện trò chơi điện tử (Gaming) - Mối nguy xao nhãng hàng đầu của học sinh / sinh viên
-        game_patterns = [
-            r'\b(league of legends|riot client|valorant|genshin impact|honkai|roblox|minecraft)\b',
-            r'\b(steam|epic games|origin|ubisoft connect|battle\.net|ea app)\b',
-            r'\b(counter-strike|cs:go|cs2|dota 2|pubg|apex legends|fifa|fc 24|fc 25)\b',
-            r'\b(garena|lien quan|free fire|naraka|black myth|elden ring|wuthering waves)\b'
-        ]
-        if not d_type and any(re.search(p, t_low) for p in game_patterns):
-            d_type = "WEB_DISTRACT"
-            d_label = "Trò chơi điện tử (Game)"
+        if not d_type:
+            game_patterns = [
+                r'\b(league of legends|riot client|valorant|genshin impact|honkai|roblox|minecraft)\b',
+                r'\b(steam|epic games|origin|ubisoft connect|battle\.net|ea app)\b',
+                r'\b(counter-strike|cs:go|cs2|dota 2|pubg|apex legends|fifa|fc 24|fc 25)\b',
+                r'\b(garena|lien quan|free fire|naraka|black myth|elden ring|wuthering waves)\b'
+            ]
+            if any(re.search(p, t_low) for p in game_patterns):
+                d_type = "WEB_DISTRACT"
+                d_label = "Trò chơi điện tử (Game)"
 
         # 3. Mạng xã hội & Chat
         fb_patterns = [
-            r'\b(facebook|fb\.com|messenger)\b'
+            r'\b(facebook|fb\.com|messenger|reels)\b'
         ]
         yt_patterns = [
             r'\b(youtube|youtu\.be)\b'

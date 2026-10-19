@@ -10,7 +10,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-ZONE_FILE = "study_zone.json"
+ZONE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "study_zone.json")
 FACE_INFERENCE_INTERVAL_SEC = 0.5
 FACE_DETECTION_TTL_SEC = 2.5
 FACE_INFERENCE_SCALE = 0.75
@@ -88,6 +88,11 @@ class FocusDetector:
         5. Attentional Reservoir: Điểm tập trung động thích ứng thời gian thực
         6. Pre-computed Camera Matrix & solvePnP (Zero GC Churn)
         """
+        if not os.path.isabs(model_path):
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidate = os.path.join(base_dir, model_path)
+            if os.path.exists(candidate):
+                model_path = candidate
         self.model_path = model_path
         self.ear_threshold = ear_threshold
         self.drowsy_limit_sec = drowsy_limit_sec

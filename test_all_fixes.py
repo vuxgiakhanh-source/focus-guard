@@ -65,6 +65,37 @@ class TestAppMonitor(unittest.TestCase):
             self.assertEqual(res["label"], "Trang web 18+ / Nhạy cảm")
             self.assertTrue(res["should_alert"])
 
+    def test_safe_keywords_do_not_whitelist_facebook(self):
+        # Facebook post discussing Excel / PDF must still be caught as FACEBOOK
+        tricky_fb_titles = [
+            "Tự học Excel cấp tốc mỗi ngày - Facebook - Google Chrome",
+            "Tải tài liệu PDF miễn phí | Facebook",
+            "Nhóm học lập trình và Microsoft Word - Facebook"
+        ]
+        self.mon.get_system_idle_seconds = lambda: 0.1
+        for title in tricky_fb_titles:
+            self.mon.get_foreground_title = lambda t=title: t
+            self.mon.active_operate_time = 3.0
+            res = self.mon.check_distraction()
+            self.assertIsNotNone(res, f"Tricky FB title was falsely whitelisted: {title}")
+            self.assertEqual(res["alert_type"], "FACEBOOK")
+
+    def test_custom_blocklist(self):
+        self.mon.custom_blocked_keywords = ["voz.vn", "tai xiu", "kenh14.vn"]
+        self.mon.get_system_idle_seconds = lambda: 0.1
+        test_titles = [
+            "F33 - Điểm báo | VOZ.VN - Google Chrome",
+            "Game Tài Xỉu Đổi Thưởng Uy Tín - Microsoft Edge",
+            "Kenh14.vn - Tin tức giới trẻ mới nhất"
+        ]
+        for title in test_titles:
+            self.mon.get_foreground_title = lambda t=title: t
+            self.mon.active_operate_time = 3.0
+            res = self.mon.check_distraction()
+            self.assertIsNotNone(res, f"Custom blocklist failed to catch: {title}")
+            self.assertEqual(res["alert_type"], "WEB_DISTRACT")
+            self.assertIn("Đã chặn", res["label"])
+
     def test_educational_youtube_vs_false_positives(self):
         # Các video giải trí KHÔNG ĐƯỢC lọt qua
         non_educational = [

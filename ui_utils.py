@@ -118,7 +118,7 @@ class HUDRenderer:
                 return name
         return None
 
-    def draw_hud(self, frame, result, session_duration_sec, pomodoro_info=None, is_muted=False, alert_msg="", show_stats=False, stats_data=None):
+    def draw_hud(self, frame, result, session_duration_sec, pomodoro_info=None, is_muted=False, alert_msg="", show_stats=False, stats_data=None, phone_status="OK", audio_status="OK"):
         h, w, _ = frame.shape
         now = time.monotonic()
 
@@ -164,7 +164,7 @@ class HUDRenderer:
             status_badge_bg = (75, 20, 25)
 
         # ---------------- ĐỊNH VỊ CÁC PANEL THÔNG MINH ----------------
-        text_state = (status, result.get("label"), is_rec, is_muted, pomo_state, int(pomo_time), alert_msg)
+        text_state = (status, result.get("label"), is_rec, is_muted, pomo_state, int(pomo_time), alert_msg, phone_status, audio_status)
         should_refresh_text = (
             self.cached_header is None
             or text_state != self.last_text_state
@@ -215,10 +215,25 @@ class HUDRenderer:
             d_h.rounded_rectangle([6, 6, 215, 26], radius=4, fill=status_badge_bg, outline=theme_rgb, width=1)
             d_h.text((12, 8), status_title, font=self.get_font(12), fill=theme_rgb)
 
-            # Trạng thái âm thanh nhỏ góc phải của header
-            sound_txt = "● Loa Bật" if not is_muted else "○ Đã Tắt Loa"
-            sound_col = (110, 240, 160) if not is_muted else (170, 170, 180)
-            d_h.text((433 - 78, 9), sound_txt, font=self.get_font(11), fill=sound_col)
+            # Trạng thái âm thanh & AI điện thoại nhỏ góc phải của header
+            if is_muted:
+                sound_txt = "○ Loa: Tắt"
+                sound_col = (170, 170, 180)
+            elif audio_status == "BEEP":
+                sound_txt = "⚠ Loa: Bíp"
+                sound_col = (255, 180, 80)
+            else:
+                sound_txt = "● Loa: Bật"
+                sound_col = (110, 240, 160)
+
+            if phone_status == "ERROR":
+                ai_txt = "⚠ AI ĐT: Lỗi"
+            elif phone_status == "LOADING":
+                ai_txt = "◌ AI ĐT: Nạp..."
+            else:
+                ai_txt = "● AI ĐT: Bật"
+
+            d_h.text((433 - 165, 9), f"{ai_txt}  {sound_txt}", font=self.get_font(11), fill=sound_col)
 
             # Dòng mô tả chi tiết lý do (rất sạch và thoáng mắt)
             d_h.text((10, 28), sub_detail, font=self.get_font(11), fill=(225, 230, 240))

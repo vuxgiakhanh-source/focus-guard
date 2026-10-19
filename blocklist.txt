@@ -1,0 +1,23 @@
+# =====================================================================
+# FOCUSGUARD PRO - DANH SÁCH CHẶN TÙY CHỌN (CUSTOM BLOCKLIST)
+# =====================================================================
+# Thêm tên ứng dụng, trang web, hoặc từ khóa bạn muốn chặn vào đây.
+# Mỗi dòng là 1 từ khóa (không phân biệt chữ hoa/thường).
+# Dòng có dấu # ở đầu là ghi chú/chú thích, sẽ được bỏ qua.
+#
+# Ví dụ về các trang web đọc tin tức, truyện, cờ bạc, xem phim:
+# vnexpress.net
+# dantri.com.vn
+# kenh14.vn
+# genk.vn
+# voz.vn
+# nettruyen
+# truyentranhaudio
+# phimmoi
+# motphim
+# fb88
+# kubet
+# w88
+# tài xỉu
+# xóc đĩa
+# =====================================================================

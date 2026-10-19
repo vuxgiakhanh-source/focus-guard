@@ -136,6 +136,7 @@ class PhoneDetector:
         self.model = None
         self.torch = None
         self.is_ready = False
+        self.has_error = False
         self.latest_boxes = []
         self.last_detected_time = 0.0
         self.lock = threading.Lock()
@@ -193,6 +194,8 @@ class PhoneDetector:
                 self.inference_thread.start()
             print("[+] YOLOv8 Nano: Đã sẵn sàng & Pre-warmed (imgsz=256, tối đa khoảng 1 FPS).")
         except Exception as e:
+            with self.lock:
+                self.has_error = True
             print(f"[-] Không thể nạp YOLOv8: {e}")
 
     def update_frame(self, frame):

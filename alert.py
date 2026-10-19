@@ -64,6 +64,17 @@ class SoundAlertManager:
             "WEB_DISTRACT": os.path.join(self.sounds_dir, "web_distract.mp3")
         }
 
+    def get_backend_status(self):
+        """Trả về 'PYGAME', 'MCI' hoặc 'BEEP'"""
+        if USE_PYGAME:
+            return "PYGAME"
+        try:
+            if hasattr(ctypes.windll, 'winmm'):
+                return "MCI"
+        except Exception:
+            pass
+        return "BEEP"
+
     def set_volume(self, volume):
         """Điều chỉnh âm lượng thông báo (0.0 đến 1.0)"""
         self.volume = max(0.0, min(1.0, float(volume)))
