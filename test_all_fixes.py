@@ -377,25 +377,69 @@ class TestDeskSleepingDetection(unittest.TestCase):
         detector.away_start = now - 10.0     # Mất mặt được 10s (trong 18s grace)
 
         dummy_frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+        # Giai đoạn cúi viết bài 10s: Tập trung cúi viết bài, không báo động
         res = detector.process_frame(dummy_frame)
         self.assertEqual(res["status"], "FOCUSED")
         self.assertIn("CÚI VIẾT BÀI", res["label"])
         self.assertFalse(res["alert"])
 
-        # Mất mặt được 28s: Đã gục xuống bàn ngủ quá 18s!
-        detector.away_start = now - 28.0
+        # Cúi viết bài liên tục 45s: Vẫn là ĐANG CÚI VIẾT BÀI, TUYỆT ĐỐI KHÔNG BÁO DROWSY!
+        detector.away_start = now - 45.0
         res = detector.process_frame(dummy_frame)
-        self.assertEqual(res["status"], "DROWSY", "Slumped head missing > 18s must trigger DROWSY!")
-        self.assertTrue(res["alert"])
-        self.assertEqual(res["alert_type"], "DROWSY")
-        self.assertIn("GỤC XUỐNG BÀN", res["label"])
+        self.assertEqual(res["status"], "FOCUSED", "Writing notes for 45s must remain FOCUSED, not DROWSY!")
+        self.assertFalse(res["alert"])
+        self.assertIn("CÚI VIẾT BÀI", res["label"])
 
-        # Mất mặt được 65s: Rơi vào nhánh AWAY / Ngủ gục quá lâu
-        detector.away_start = now - 65.0
+        # Cúi viết bài liên tục 120s (2 phút): Vẫn là FOCUSED!
+        detector.away_start = now - 120.0
+        res = detector.process_frame(dummy_frame)
+        self.assertEqual(res["status"], "FOCUSED")
+        self.assertFalse(res["alert"])
+
+        # Cúi quá 185s (> 3 phút không thấy mặt): Nhắc nhở rời bàn / cúi quá lâu (AWAY), KHÔNG PHẢI DROWSY
+        detector.away_start = now - 185.0
         res = detector.process_frame(dummy_frame)
         self.assertEqual(res["status"], "AWAY")
         self.assertTrue(res["alert"])
         self.assertEqual(res["alert_type"], "AWAY")
+        self.assertNotEqual(res["alert_type"], "DROWSY", "Missing face while writing must NEVER trigger DROWSY!")
+
+    def test_drowsy_only_when_eyes_closed(self):
+        """Buồn ngủ / ngủ gật CHỈ kích hoạt khi thực sự thấy nhắm nghiền mắt (EAR thấp kéo dài)"""
+        from detector import FocusDetector
+        detector = FocusDetector()
+        now = time.monotonic()
+        dummy_frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+
+        # Trường hợp 1: Người dùng cúi đầu đọc sách/viết bài (pitch = -25°), mắt mở nhìn xuống bàn (EAR = 0.12)
+        detector.last_detection_data = {
+            "landmarks": [type("Pt", (), {"x": 0.5, "y": 0.5})()] * 468,
+            "ear": 0.12,
+            "mar": 0.1,
+            "pitch": -25.0,
+            "yaw": 0.0,
+            "roll": 0.0,
+            "gaze_ratio": 0.5,
+            "timestamp": now
+        }
+        res = detector.process_frame(dummy_frame)
+        self.assertEqual(res["status"], "FOCUSED")
+        self.assertFalse(res["alert"], "Looking down at desk with eyes open must NOT trigger drowsy alert!")
+
+        # Trường hợp 2: Cúi đầu sâu (pitch = -73°), nhưng mắt vẫn mở đọc bài (EAR = 0.11)
+        detector.last_detection_data["pitch"] = -73.0
+        detector.last_detection_data["ear"] = 0.11
+        res = detector.process_frame(dummy_frame)
+        self.assertEqual(res["status"], "FOCUSED", "Deep head tilt with eyes open must NOT trigger DROWSY!")
+        self.assertFalse(res["alert"])
+
+        # Trường hợp 3: Người dùng thực sự nhắm nghiền mắt (EAR = 0.04) khi cúi đầu, liên tục 8.0s -> NGỦ GẬT
+        detector.last_detection_data["ear"] = 0.04
+        detector.eye_closed_start = now - 8.0
+        res = detector.process_frame(dummy_frame)
+        self.assertEqual(res["status"], "DROWSY", "Truly closed eyes (EAR < 0.08) > 7.0s must trigger DROWSY!")
+        self.assertTrue(res["alert"])
+        self.assertEqual(res["alert_type"], "DROWSY")
 
     def test_zone_learning_early_exit(self):
         from detector import FocusDetector

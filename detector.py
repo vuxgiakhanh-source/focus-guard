@@ -98,7 +98,7 @@ class FocusDetector:
         self.drowsy_limit_sec = drowsy_limit_sec
         self.distracted_limit_sec = distracted_limit_sec
         self.away_limit_sec = away_limit_sec
-        self.writing_grace_sec = 18.0        # Ân hạn 18s khi cúi đầu viết bài trước khi kiểm tra ngủ gục
+        self.writing_grace_sec = 180.0       # Ân hạn 180s (3 phút) khi cúi đầu viết bài ghi chép vở
         self.last_seen_pitch = 0.0
         self.last_seen_reading = False
 
@@ -802,11 +802,14 @@ class FocusDetector:
                 self.away_start = now
             away_dur = now - self.away_start
 
-            # ĐẶC QUYỀN CÚI VIẾT BÀI vs NGUY CƠ GỤC ĐẦU XUỐNG BÀN NGỦ:
-            was_bowed_writing = (self.last_seen_pitch < -16.0 or self.last_seen_reading)
+            # ĐẶC QUYỀN CÚI VIẾT BÀI (DESK WRITING MODE):
+            # Người dùng cúi thấp đầu viết bài trong vở, camera chỉ thấy đỉnh đầu/tóc (không thấy mặt)
+            # ĐÂY LÀ HÀNH VI HỌC TẬP TẬP TRUNG HOÀN TOÀN BÌNH THƯỜNG!
+            # Tuyệt đối KHÔNG BÁO BUỒN NGỦ (vì không nhìn thấy mắt nhắm).
+            was_bowed_writing = (self.last_seen_pitch < -8.0 or self.last_seen_reading)
             if was_bowed_writing:
                 if away_dur <= self.writing_grace_sec:
-                    # Giai đoạn 1 (<= 18s): Đang cúi thấp đầu viết bài trong vở
+                    # Trong vòng 180s (3 phút): Tập trung ghi chép bài vở bình thường
                     self._update_energy("FOCUSED", now)
                     return {
                         "status": "FOCUSED",
@@ -830,16 +833,17 @@ class FocusDetector:
                         "focus_score": self.get_focus_score(),
                         "landmarks": None
                     }
-                elif away_dur <= 50.0:
-                    # Giai đoạn 2 (18s - 50s): Cúi gục đầu quá lâu không thấy mặt -> CẢNH BÁO BUỒN NGỦ / NGỦ GẬT TRÊN BÀN!
-                    self._update_energy("DROWSY", now)
+                else:
+                    # Cúi quá 3 phút (180s) không thấy mặt: chuyển sang nhắc nhở RỜI BÀN HOẶC CÚI QUÁ LÂU (nhắc tư thế cổ, KHÔNG phải ngủ gật)
+                    should_alert = True
+                    self._update_energy("AWAY", now)
                     return {
-                        "status": "DROWSY",
-                        "label": "GỤC XUỐNG BÀN / NGỦ GẬT?",
-                        "reason": f"Cúi gục đầu quá lâu ({away_dur:.0f}s) không thấy mặt!",
-                        "alert": True,
-                        "alert_type": "DROWSY",
-                        "ear": 0.10,
+                        "status": "AWAY",
+                        "label": "RỜI BÀN HOẶC CÚI QUÁ LÂU",
+                        "reason": f"Đã cúi thấp quá lâu ({away_dur:.0f}s); hãy ngẩng đầu vươn vai thư giãn cổ!",
+                        "alert": should_alert,
+                        "alert_type": "AWAY",
+                        "ear": 0.0,
                         "mar": 0.0,
                         "pitch": self.last_seen_pitch,
                         "yaw": 0.0,
@@ -855,13 +859,12 @@ class FocusDetector:
                         "focus_score": self.get_focus_score(),
                         "landmarks": None
                     }
-                # Giai đoạn 3 (> 50s): Rơi xuống nhánh rời khỏi bàn / ngủ quên bên dưới
 
             should_alert = away_dur > self.away_limit_sec
             self._update_energy("AWAY" if should_alert else "WARNING", now)
             return {
-                "status": "AWAY",
-                "label": "RỜI KHỎI BÀN" if not was_bowed_writing else "RỜI BÀN HOẶC NGỦ GỤC",
+                "status": "AWAY" if should_alert else "WARNING",
+                "label": "RỜI KHỎI BÀN" if should_alert else "TẠM KHUẤT MẶT",
                 "reason": f"Không thấy khuôn mặt ({away_dur:.1f}s)",
                 "alert": should_alert,
                 "alert_type": "AWAY" if should_alert else None,
@@ -939,10 +942,10 @@ class FocusDetector:
             }
 
         # 5. NHẬN DIỆN TƯ THẾ HỌC ĐỌC SÁCH / GHI CHÉP VỞ (DESK READING MODE)
-        # Khi cúi đầu nhìn xuống sách/vở trên bàn: pitch âm từ -8° tới -70°, góc quay yaw lên tới 55°
+        # Khi cúi đầu nhìn xuống sách/vở trên bàn: pitch âm từ -4° tới -85°, góc quay yaw lên tới 60°
         self.last_seen_pitch = pitch
         is_active_phone = has_phone and (self.phone_detected_start is not None) and (now - self.phone_detected_start >= 1.0)
-        is_reading_desk = (-70.0 <= pitch <= -8.0) and (abs(yaw) <= 55.0) and not is_active_phone
+        is_reading_desk = (-85.0 <= pitch <= -4.0) and (abs(yaw) <= 60.0) and not is_active_phone
         self.last_seen_reading = is_reading_desk
 
         # 5b. TỰ ĐỘNG PHÁT HIỆN GÓC CAM THAY ĐỔI & TÁI XÉT GÓC HỌC TỨC THÌ (INSTANT ADAPTATION)
@@ -1026,8 +1029,13 @@ class FocusDetector:
         # Gaze tracking: Chỉ cảnh báo khi ngồi thẳng nhìn ngước lên mà liếc mắt mạnh sang hai bên
         is_gaze_diverted = (not is_reading_desk) and (gaze_ratio > 0.88 or gaze_ratio < 0.12) and abs(yaw) < 20.0
 
-        # Thích ứng góc cúi đầu đọc sách/viết bài: mí mắt tự nhiên cụp xuống, hạ ngưỡng EAR xuống 52%
-        effective_ear_thresh = (self.ear_threshold * 0.52) if is_reading_desk else self.ear_threshold
+        # Thích ứng góc cúi đầu đọc sách/viết bài: mí mắt tự nhiên cụp xuống theo hướng nhìn xuống bàn
+        # Khi cúi đọc/viết bài, chỉ coi là nhắm mắt ngủ khi mắt nhắm nghiền thực sự (EAR < 0.080)
+        # Ngược lại khi nhìn thẳng, dùng ngưỡng EAR chuẩn
+        if is_reading_desk:
+            effective_ear_thresh = min(0.080, self.ear_threshold * 0.40)
+        else:
+            effective_ear_thresh = self.ear_threshold
         is_eyes_closed = (avg_ear < effective_ear_thresh)
         is_yawning = (mar > 0.70)
 
@@ -1098,26 +1106,21 @@ class FocusDetector:
                 self.phone_detected_start = None
 
         # Ưu tiên 2: BUỒN NGỦ / GỤC XUỐNG BÀN / PERCLOS / MICRO-SLEEP
-        micro_sleep_limit = 5.5 if is_reading_desk else self.drowsy_limit_sec
-        # CHỈ COI LÀ GỤC XUỐNG BÀN KHI TRÁN ÚP HOÀN TOÀN XUỐNG MẶT BÀN (pitch < -72°) VÀ MẮT NHẮM NGHIỀN
-        is_head_drooped = (pitch < -72.0) and is_eyes_closed
-
+        # CHỈ CẢNH BÁO BUỒN NGỦ KHI THỰC SỰ THẤY MẮT NHẮM NGHIỀN (is_eyes_closed == True)
         if status == "FOCUSED":
-            if is_head_drooped:
-                status = "DROWSY"
-                label = "GỤC XUỐNG BÀN"
-                reason = "Đầu úp sát mặt bàn và nhắm nghiền mắt!"
-                should_alert = True
-                alert_type = "DROWSY"
-            elif is_eyes_closed:
+            if is_eyes_closed:
                 if self.eye_closed_start is None:
                     self.eye_closed_start = now
                 drowsy_dur = now - self.eye_closed_start
 
+                # Khi cúi đọc sách / viết bài: chỉ coi là ngủ gật khi mắt nhắm nghiền liên tục >= 7.0s
+                # Khi ngồi thẳng nhìn màn hình: nhắm mắt liên tục >= 4.0s (drowsy_limit_sec)
+                micro_sleep_limit = 7.0 if is_reading_desk else self.drowsy_limit_sec
+
                 if drowsy_dur > micro_sleep_limit:
                     status = "DROWSY"
-                    label = "NGỦ GẬT (MICRO-SLEEP)"
-                    reason = f"Nhắm mắt quá lâu ({drowsy_dur:.1f}s)!"
+                    label = "GỤC XUỐNG BÀN NGỦ" if (is_reading_desk or pitch < -65.0) else "NGỦ GẬT (MICRO-SLEEP)"
+                    reason = f"Đã nhắm mắt ngủ gật ({drowsy_dur:.1f}s)!"
                     should_alert = True
                     alert_type = "DROWSY"
                 else:
