@@ -16,9 +16,12 @@ class AppDistractionMonitor:
     - Giờ giải lao Pomodoro -> Cho phép giải trí tự do 100%.
     - Đọc tên cửa sổ bằng Windows User32 API; phần tải CPU chính đến từ các mô hình nhận diện.
     """
-    def __init__(self, active_operate_thresh_sec=6.0, idle_timeout_sec=2.0, debounce_sec=6.0, **kwargs):
-        self.active_operate_thresh_sec = debounce_sec if debounce_sec != 6.0 else active_operate_thresh_sec
-        self.idle_timeout_sec = idle_timeout_sec
+    def __init__(self, active_operate_thresh_sec=2.8, idle_timeout_sec=3.5, debounce_sec=None, **kwargs):
+        if debounce_sec is not None:
+            self.active_operate_thresh_sec = float(debounce_sec)
+        else:
+            self.active_operate_thresh_sec = float(active_operate_thresh_sec)
+        self.idle_timeout_sec = float(idle_timeout_sec)
 
         self.active_operate_time = 0.0
         self.last_check_time = time.monotonic()
@@ -120,33 +123,34 @@ class AppDistractionMonitor:
         d_type = None
         d_label = None
 
-        # 1. Nhận diện trò chơi điện tử (Gaming) - Mối nguy xao nhãng hàng đầu của học sinh / sinh viên
+        # 1. Nhận diện trang web người lớn / nội dung 18+ / nhạy cảm
+        adult_patterns = [
+            r'\b(pornhub|xvideos|xnxx|xhamster|redtube|youporn|brazzers|onlyfans|javhd|jav|hentai|vlxx|phimsex|sex|xxx|nsfw|rule34|stripchat|chaturbate|spankbang|beeg|fapello|thothub)\b'
+        ]
+        if any(re.search(p, t_low) for p in adult_patterns):
+            d_type = "WEB_DISTRACT"
+            d_label = "Trang web 18+ / Nhạy cảm"
+
+        # 2. Nhận diện trò chơi điện tử (Gaming) - Mối nguy xao nhãng hàng đầu của học sinh / sinh viên
         game_patterns = [
             r'\b(league of legends|riot client|valorant|genshin impact|honkai|roblox|minecraft)\b',
             r'\b(steam|epic games|origin|ubisoft connect|battle\.net|ea app)\b',
             r'\b(counter-strike|cs:go|cs2|dota 2|pubg|apex legends|fifa|fc 24|fc 25)\b',
             r'\b(garena|lien quan|free fire|naraka|black myth|elden ring|wuthering waves)\b'
         ]
-        if any(re.search(p, t_low) for p in game_patterns):
+        if not d_type and any(re.search(p, t_low) for p in game_patterns):
             d_type = "WEB_DISTRACT"
             d_label = "Trò chơi điện tử (Game)"
 
-        # 2. Mạng xã hội & Chat
+        # 3. Mạng xã hội & Chat
         fb_patterns = [
-            r'(^|\s*[-–—|]\s*)facebook(\s*[-–—|]|\s*$)',
-            r'^\([0-9+]+\)\s*facebook',
-            r'(facebook\.com|fb\.com|m\.facebook\.com)',
-            r'(^|\s*[-–—|]\s*)messenger(\s*[-–—|]|\s*$)',
-            r'^\([0-9+]+\)\s*messenger'
+            r'\b(facebook|fb\.com|messenger)\b'
         ]
         yt_patterns = [
-            r'(^|\s*[-–—|]\s*)youtube(\s*[-–—|]|\s*$)',
-            r'^\([0-9+]+\)\s*youtube',
-            r'(youtube\.com|youtu\.be)'
+            r'\b(youtube|youtu\.be)\b'
         ]
         tiktok_patterns = [
-            r'(^|\s*[-–—|]\s*)tiktok(\s*[-–—|]|\s*$)',
-            r'tiktok\.com'
+            r'\b(tiktok)\b'
         ]
 
         if not d_type:
@@ -184,7 +188,7 @@ class AppDistractionMonitor:
             self.current_distraction = None
             return None
 
-        # Cửa sổ hiện tại LÀ Facebook/YouTube:
+        # Cửa sổ hiện tại LÀ Facebook/YouTube/Giải trí:
         # Kiểm tra xem người dùng có ĐANG THAO TÁC (gõ phím, click chuột, cuộn trang) không?
         idle_sec = self.get_system_idle_seconds()
         is_actively_operating = (idle_sec < self.idle_timeout_sec)
@@ -196,10 +200,11 @@ class AppDistractionMonitor:
 
             self.active_operate_time += dt
         else:
-            # Không tương tác -> hạ dần thời gian tích lũy
-            self.active_operate_time = max(0.0, self.active_operate_time - dt * 2.0)
+            # Không tương tác -> hạ chậm dần thời gian tích lũy (không bị xóa sạch khi dừng 1-2s đọc bài viết)
+            self.active_operate_time = max(0.0, self.active_operate_time - dt * 0.4)
 
-        should_alert = (self.active_operate_time >= self.active_operate_thresh_sec)
+        thresh = 0.0 if d_label == "Trang web 18+ / Nhạy cảm" else self.active_operate_thresh_sec
+        should_alert = (self.active_operate_time >= thresh) and is_actively_operating
 
         return {
             "is_distracted": (self.active_operate_time > 0.4),

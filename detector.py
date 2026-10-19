@@ -1066,7 +1066,7 @@ class FocusDetector:
             self.last_phone_seen_time = now
             phone_dur = now - self.phone_detected_start
 
-            if phone_dur >= 2.5:
+            if phone_dur >= 1.8:
                 status = "DISTRACTED"
                 label = "PHÁT HIỆN ĐIỆN THOẠI!"
                 reason = "Đang cầm điện thoại trên tay!"
@@ -1077,9 +1077,9 @@ class FocusDetector:
                 label = "CẢNH BÁO ĐIỆN THOẠI"
                 reason = "Phát hiện điện thoại xuất hiện..."
         else:
-            if hasattr(self, 'last_phone_seen_time') and (now - self.last_phone_seen_time < 0.8) and self.phone_detected_start:
+            if hasattr(self, 'last_phone_seen_time') and (now - self.last_phone_seen_time < 1.8) and self.phone_detected_start:
                 phone_dur = now - self.phone_detected_start
-                if phone_dur >= 2.5:
+                if phone_dur >= 1.8:
                     status = "DISTRACTED"
                     label = "PHÁT HIỆN ĐIỆN THOẠI!"
                     reason = "Đang cầm điện thoại trên tay!"

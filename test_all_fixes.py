@@ -29,20 +29,41 @@ class TestAppMonitor(unittest.TestCase):
             ("Shopee Việt Nam | Mua và Bán Trên Sàn TMĐT - Google Chrome", True, "WEB_DISTRACT"),
             ("Threads - Google Chrome", True, "WEB_DISTRACT"),
             ("(1) Facebook - Google Chrome", True, "FACEBOOK"),
+            ("Facebook và 1 trang khác - Microsoft​ Edge", True, "FACEBOOK"),
+            ("Messenger | Trò chuyện - Cốc Cốc", True, "FACEBOOK"),
             ("YouTube - Google Chrome", True, "YOUTUBE"),
             ("TikTok - Make Your Day - Google Chrome", True, "WEB_DISTRACT"),
             ("Twitter / X - Google Chrome", True, "WEB_DISTRACT"),
+            ("Pornhub - Free Porn Videos - Google Chrome", True, "WEB_DISTRACT"),
+            ("XVideos: Free Sex Videos - Google Chrome", True, "WEB_DISTRACT"),
+            ("XNXX.COM - Free Porn Videos - Brave", True, "WEB_DISTRACT"),
         ]
         for title, should_distract, expected_type in test_cases:
             t_low = title.lower().strip()
             self.mon.get_foreground_title = lambda t=title: t
-            # Test direct pattern matching via check_distraction
             self.mon.active_operate_time = 5.0
             self.mon.get_system_idle_seconds = lambda: 0.1
             res = self.mon.check_distraction()
             if should_distract:
                 self.assertIsNotNone(res, f"Failed for {title}")
                 self.assertEqual(res["alert_type"], expected_type, f"Wrong type for {title}")
+
+    def test_adult_website_detection(self):
+        adult_titles = [
+            "Pornhub.com - HD Porn & Sex Videos - Google Chrome",
+            "xvideos.com - Hot Movies - Microsoft Edge",
+            "XNXX - Best Adult Tube - Firefox",
+            "Phim sex Vietsub mới nhất - Cốc Cốc",
+            "javhd - Japanese Adult Video - Brave"
+        ]
+        self.mon.get_system_idle_seconds = lambda: 0.1
+        for title in adult_titles:
+            self.mon.get_foreground_title = lambda t=title: t
+            self.mon.active_operate_time = 2.0
+            res = self.mon.check_distraction()
+            self.assertIsNotNone(res, f"Adult site missed: {title}")
+            self.assertEqual(res["label"], "Trang web 18+ / Nhạy cảm")
+            self.assertTrue(res["should_alert"])
 
     def test_educational_youtube_vs_false_positives(self):
         # Các video giải trí KHÔNG ĐƯỢC lọt qua
@@ -86,26 +107,42 @@ class TestPhoneKinematics(unittest.TestCase):
         tracker = KinematicPhoneTracker()
         now = time.monotonic()
 
-        # Giả lập điện thoại đặt trên bàn gỗ, không có tay chạm (has_hand=False)
-        # Tọa độ rung nhẹ do box YOLO (± 3px)
-        boxes = [(100, 100, 200, 300, 0.70, False)]
-        res = tracker.update(boxes, now)
-        # Nhịp đầu tiên: mặc định mới xuất hiện là True
-        self.assertTrue(res[0][5])
+        # Giả lập điện thoại đặt ở vùng mép bàn (cy = 380, frame_h = 480)
+        # Không có tay chạm (has_hand=False), tọa độ rung nhẹ do box YOLO (± 3px)
+        boxes = [(100, 330, 200, 430, 0.70, False)]
+        res = tracker.update(boxes, now, frame_h=480)
+        self.assertTrue(res[0][5], "Nhịp đầu tiên xuất hiện mặc định là True")
 
         # Sau 0.5s: vẫn yên vị
-        res = tracker.update([(102, 101, 202, 301, 0.72, False)], now + 0.5)
-        # Sau 1.3s: đã đứng yên > 1.2s không có tay chạm -> phải chuyển sang False (TĨNH TRÊN BÀN)
-        res = tracker.update([(101, 100, 201, 300, 0.71, False)], now + 1.3)
-        self.assertFalse(res[0][5], "Phone lying motionless on desk must transition to static is_held=False")
+        res = tracker.update([(102, 331, 202, 431, 0.72, False)], now + 0.5, frame_h=480)
+        self.assertTrue(res[0][5], "Chưa đủ 2s tĩnh thì vẫn giữ trạng thái")
 
-        # Có rung nhẹ YOLO thêm 1s nữa: vẫn phải là static
-        res = tracker.update([(103, 102, 203, 302, 0.71, False)], now + 2.0)
+        # Sau 2.2s: đã đứng yên > 2.0s ở mép bàn không có tay chạm -> phải chuyển sang False (TĨNH TRÊN BÀN)
+        res = tracker.update([(101, 330, 201, 430, 0.71, False)], now + 2.2, frame_h=480)
+        self.assertFalse(res[0][5], "Phone lying motionless on desk > 2.0s must transition to static is_held=False")
+
+        # Rung nhẹ YOLO thêm 1s nữa: vẫn phải là static
+        res = tracker.update([(103, 332, 203, 432, 0.71, False)], now + 3.2, frame_h=480)
         self.assertFalse(res[0][5], "YOLO bounding box jitter must not falsely trigger is_held=True")
 
         # Người dùng nhấc điện thoại lên (di chuyển 35px): phải lập tức chuyển sang CẦM TRÊN TAY
-        res = tracker.update([(140, 140, 240, 340, 0.75, False)], now + 2.5)
+        res = tracker.update([(140, 270, 240, 370, 0.75, False)], now + 3.8, frame_h=480)
         self.assertTrue(res[0][5], "Moving phone must transition to is_held=True")
+
+    def test_phone_tracker_elevated_in_hand(self):
+        from phone_detector import KinematicPhoneTracker
+        tracker = KinematicPhoneTracker()
+        now = time.monotonic()
+
+        # Người dùng cầm điện thoại ngang ngực/mặt (cy = 180, frame_h = 480 < 0.65 frame_h)
+        # Dù không phát hiện được màu da (has_hand=False) và cầm bất động, vẫn là ĐANG CẦM
+        boxes = [(100, 130, 200, 230, 0.70, False)]
+        res = tracker.update(boxes, now, frame_h=480)
+        self.assertTrue(res[0][5])
+
+        # Sau 3 giây cầm yên ngang ngực: vẫn là CẦM TRÊN TAY
+        res = tracker.update([(100, 130, 200, 230, 0.70, False)], now + 3.0, frame_h=480)
+        self.assertTrue(res[0][5], "Phone held elevated at chest/face level must remain is_held=True even when still")
 
     def test_phone_tracker_hand_contact(self):
         from phone_detector import KinematicPhoneTracker
@@ -117,7 +154,7 @@ class TestPhoneKinematics(unittest.TestCase):
         res = tracker.update([(100, 100, 200, 300, 0.70, True)], now)
         self.assertTrue(res[0][5])
 
-        res = tracker.update([(100, 100, 200, 300, 0.70, True)], now + 1.5)
+        res = tracker.update([(100, 100, 200, 300, 0.70, True)], now + 2.5)
         self.assertTrue(res[0][5], "Phone held still in hands must remain is_held=True due to hand contact")
 
 
