@@ -135,43 +135,54 @@ class AppDistractionMonitor:
             except Exception:
                 pass
 
-        # Kiểm tra trước xem có phải trang giải trí / mạng xã hội không
-        # để tránh bị safe_keywords (như "excel", "pdf") whitelist nhầm khi đọc bài viết Facebook về Excel
-        is_known_distraction = any(re.search(p, t_low) for p in [
-            r'\b(facebook|fb\.com|messenger|reels|tiktok|youtube|youtu\.be)\b',
-            r'\b(pornhub|xvideos|xnxx|xhamster|redtube|youporn|brazzers|onlyfans|javhd|jav|hentai|vlxx|phimsex|sex|xxx|nsfw|rule34|stripchat|chaturbate|spankbang|beeg|fapello|thothub)\b',
-            r'\b(bilibili|netflix|shopee|lazada|instagram|discord|telegram|twitch|reddit|threads|twitter|weibo|pinterest)\b'
-        ])
-        if not is_known_distraction and self.custom_blocked_keywords:
-            for kw in self.custom_blocked_keywords:
-                kw_low = kw.lower().strip()
-                kw_norm = strip_vietnamese_accents(kw_low)
-                if kw_low in t_low or kw_norm in t_norm:
-                    is_known_distraction = True
-                    break
+        # 1. KIỂM TRA ỨNG DỤNG LÀM VIỆC / SOẠN THẢO / LẬP TRÌNH ĐỂ BÀN (LOCAL DESKTOP APPS)
+        # Các cửa sổ IDE, Office, Terminal... mở tài liệu hoặc file code (kể cả chứa chữ facebook, sex, threads)
+        # PHẢI LUÔN LUÔN ĐƯỢC XEM LÀ AN TOÀN TUYỆT ĐỐI nếu không phải tab trong trình duyệt web.
+        known_browser_suffixes = [
+            "- google chrome", "- microsoft​ edge", "- microsoft edge",
+            "- brave", "- firefox", "- mozilla firefox",
+            "- cốc cốc", "- coc coc", "- opera", "- vivaldi", "- chromium"
+        ]
+        is_in_browser = any(t_low.endswith(browser) or browser in t_low for browser in known_browser_suffixes)
 
-        if not is_known_distraction:
-            # Danh sách ứng dụng an toàn và công cụ học tập / nghiên cứu
-            safe_keywords = [
-                "visual studio code", "pycharm", "intellij", "cursor",
-                "sublime", "notepad", "terminal", "powershell", "cmd.exe", "git bash", "google search",
-                "tìm kiếm trên google", "tìm trên google", "bing search", "github", "stackoverflow",
-                "notion", "obsidian", "anki", "quizlet", "overleaf", "latex", "calculator",
-                "desmos", "geogebra", "duolingo", "khan academy", "coursera", "edx", "udemy",
-                "leetcode", "hackerrank", "kaggle", "canva", "figma", "foxit", "adobe reader",
-                "wps office", "libreoffice", "google docs", "google sheets", "google slides",
-                "google drive", "zotero", "mendeley"
+        if not is_in_browser:
+            # Ứng dụng để bàn cục bộ:
+            local_desktop_safe_patterns = [
+                # Lập trình & Kỹ thuật
+                r'(?:^|[-–—|]\s*)(?:visual\s+studio(?:\s+code)?|pycharm|intellij(?:\s+idea)?|clion|webstorm|rider|goland|android\s+studio|sublime\s+text|notepad\+\+|notepad|cursor)\b',
+                r'(?:^|[-–—|]\s*)(?:terminal|powershell|cmd\.exe|git\s+bash|mintty)\b',
+                # Soạn thảo văn bản & Tài liệu văn phòng
+                r'(?:^|[-–—|]\s*)(?:microsoft\s+)?(word|excel|powerpoint)\s*$',
+                r'\.(?:docx?|xlsx?|pptx?|pdf|py|cpp|c|java|cs|js|ts|html|css|json|sql|md|tex)\s*[-–—|]',
+                r'(?:^|[-–—|]\s*)(?:foxit|adobe\s+reader|acrobat|sumatrapdf|wps\s+office|libreoffice)\b',
+                # Công cụ ghi chú & Học tập
+                r'(?:^|[-–—|]\s*)(?:notion|obsidian|anki|zotero|mendeley|overleaf|calculator|geogebra|desmos)\b'
             ]
-            safe_title_patterns = [
-                r"(?:^|[-–—|]\s*)(?:microsoft\s+)?(word|excel|powerpoint)\s*$",
-                r"\.pdf\s*[-–—|]"
-            ]
-            if any(safe in t_low for safe in safe_keywords) or any(
-                re.search(pattern, t_low) for pattern in safe_title_patterns
-            ):
+            if any(re.search(pat, t_low) for pat in local_desktop_safe_patterns):
                 self.active_operate_time = 0.0
                 self.current_distraction = None
                 return None
+
+        # 2. TỰ ĐỘNG NẠP LẠI BLOCKLIST NẾU NGƯỜI DÙNG SỬA BLOCKLIST.TXT
+        if os.path.exists(self.blocklist_file):
+            try:
+                mtime = os.path.getmtime(self.blocklist_file)
+                if mtime != self.last_blocklist_mtime:
+                    self.custom_blocked_keywords = self._load_blocklist()
+            except Exception:
+                pass
+
+        # 3. KIỂM TRA TÀI LIỆU HỌC TẬP / TÌM KIẾM AN TOÀN TRÊN TRÌNH DUYỆT
+        # Trừ khi tiêu đề rõ ràng thuộc về Facebook, YouTube giải trí, TikTok, Web người lớn...
+        general_safe_keywords = [
+            "google search", "tìm kiếm trên google", "tìm trên google", "bing search",
+            "github", "stackoverflow", "leetcode", "hackerrank", "kaggle",
+            "khan academy", "coursera", "edx", "udemy", "duolingo",
+            "google docs", "google sheets", "google slides", "google drive",
+            "canva", "figma"
+        ]
+        # Tài liệu lập trình API không bị tính là mạng xã hội
+        is_dev_doc = bool(re.search(r'\b(api\s+documentation|developer\s+platform|developer\s+guide|developer\s+docs)\b', t_low))
 
         d_type = None
         d_label = None
@@ -186,43 +197,64 @@ class AppDistractionMonitor:
                     d_label = f"Đã chặn: {kw}"
                     break
 
-        # 1. Nhận diện trang web người lớn / nội dung 18+ / nhạy cảm
+        # 1. Nhận diện trang web người lớn / nội dung 18+ (Dùng tên miền hoặc cụm từ khiêu dâm rõ ràng)
+        # KHÔNG KHỚP TỪ ĐƠN LẺ "sex" để tránh chặn tài liệu sinh học/sức khỏe (Sex determination, Sex differences...)
         if not d_type:
-            adult_patterns = [
-                r'\b(pornhub|xvideos|xnxx|xhamster|redtube|youporn|brazzers|onlyfans|javhd|jav|hentai|vlxx|phimsex|sex|xxx|nsfw|rule34|stripchat|chaturbate|spankbang|beeg|fapello|thothub)\b'
+            adult_domains = [
+                r'\b(pornhub|xvideos|xnxx|xhamster|redtube|youporn|brazzers|onlyfans|javhd|vlxx|stripchat|chaturbate|spankbang|beeg|fapello|thothub)\b',
+                r'\brule34\b'
             ]
-            if any(re.search(p, t_low) for p in adult_patterns):
+            adult_explicit_terms = [
+                r'\b(phimsex|phim\s+sex|phim\s+nguoi\s+lon)\b',
+                r'\bsex\s+(?:video|clip|phim|hd|movie|hay|gai|tour|show|cam|tape|hub)\b',
+                r'\b(?:video|clip|phim|xem)\s+sex\b',
+                r'\bxxx\s+(?:video|clip|phim|hd|movie)\b',
+                r'\bporn(?:ography|\s+video|\s+movie|\s+pic|\s+hub)?\b',
+                r'\b(hentai|javhd|nsfw|rule34)\b'
+            ]
+            if any(re.search(p, t_low) for p in adult_domains + adult_explicit_terms):
                 d_type = "WEB_DISTRACT"
                 d_label = "Trang web 18+ / Nhạy cảm"
 
-        # 2. Nhận diện trò chơi điện tử (Gaming) - Mối nguy xao nhãng hàng đầu của học sinh / sinh viên
+        # 2. Nhận diện trò chơi điện tử (Gaming)
+        # Dùng ranh giới tên miền hoặc cụm tiêu đề rõ ràng, KHÔNG KHỚP TỪ ĐƠN "steam" (Steam engine) hay "origin" (Origin of Species)
         if not d_type:
             game_patterns = [
                 r'\b(league of legends|riot client|valorant|genshin impact|honkai|roblox|minecraft)\b',
-                r'\b(steam|epic games|origin|ubisoft connect|battle\.net|ea app)\b',
                 r'\b(counter-strike|cs:go|cs2|dota 2|pubg|apex legends|fifa|fc 24|fc 25)\b',
-                r'\b(garena|lien quan|free fire|naraka|black myth|elden ring|wuthering waves)\b'
+                r'\b(garena|lien quan|free fire|naraka|black myth|elden ring|wuthering waves)\b',
+                r'\b(steampowered\.com|steamcommunity\.com|epicgames\.com|ea\.com)\b',
+                r'(?:^|[-–—|]\s*)steam(?:\s+(?:community|store|client|support|deck|app))?(?:\s*[-–—|]|\s*$)',
+                r'(?:^|[-–—|]\s*)origin(?:\s+(?:client|games?|store))(?:\s*[-–—|]|\s*$)',
+                r'\b(ubisoft connect|battle\.net|ea app|epic games launcher)\b',
+                r'^steam$'
             ]
             if any(re.search(p, t_low) for p in game_patterns):
                 d_type = "WEB_DISTRACT"
                 d_label = "Trò chơi điện tử (Game)"
 
-        # 3. Mạng xã hội & Chat
-        fb_patterns = [
-            r'\b(facebook|fb\.com|messenger|reels)\b'
-        ]
-        yt_patterns = [
-            r'\b(youtube|youtu\.be)\b'
-        ]
-        tiktok_patterns = [
-            r'\b(tiktok)\b'
-        ]
-
+        # 3. Facebook & Messenger:
+        # Khớp theo tên miền hoặc cụm nhận diện thương hiệu tab trình duyệt
         if not d_type:
+            fb_patterns = [
+                r'\b(facebook\.com|messenger\.com|fb\.com|m\.facebook\.com|web\.facebook\.com)\b',
+                r'(?:^|[-–—|]\s*)(?:facebook|messenger)(?:\s*[-–—|]|\s*$)',
+                r'^\([0-9+]+\)\s*(?:facebook|messenger)\b',
+                r'^facebook(?:\s*[-–—|:]|\s+(?:watch|reels|and\s+\d+|va\s+\d+|và\s+\d+)|$)',
+                r'\bfacebook\s+(?:watch|reels|and\s+\d+\s+more\s+pages|và\s+\d+\s+trang\s+khác)\b'
+            ]
             if any(re.search(p, t_low) for p in fb_patterns):
                 d_type = "FACEBOOK"
                 d_label = "Facebook"
-            elif any(re.search(p, t_low) for p in yt_patterns):
+
+        # 4. YouTube:
+        if not d_type:
+            yt_patterns = [
+                r'\b(youtube\.com|youtu\.be)\b',
+                r'(?:^|[-–—|]\s*)youtube(?:\s*[-–—|]|\s*$)',
+                r'^\([0-9+]+\)\s*youtube\b'
+            ]
+            if any(re.search(p, t_low) for p in yt_patterns):
                 # Ngoại lệ thông minh: Cho phép nghe Lofi hoặc xem BÀI GIẢNG / TUTORIAL trên YouTube
                 educational_yt_patterns = [
                     r'\b(toán\s+học|môn\s+toán|đại\s+số|hình\s+học|giải\s+tích|ngữ\s+văn|môn\s+văn|tiếng\s+anh|ielts|toeic|toefl)\b',
@@ -233,25 +265,54 @@ class AppDistractionMonitor:
                     r'\b(lofi\s+hip\s+hop|lofi\s+study|nhạc\s+tập\s+trung|music\.youtube)\b'
                 ]
                 if any(re.search(p, t_low) for p in educational_yt_patterns):
-                    # Đang xem video bài giảng hoặc nhạc học bài -> Bỏ qua không báo động!
                     self.active_operate_time = 0.0
                     self.current_distraction = None
                     return None
 
                 d_type = "YOUTUBE"
                 d_label = "YouTube"
-            elif any(re.search(p, t_low) for p in tiktok_patterns):
+
+        # 5. TikTok & Các mạng xã hội / Mua sắm khác:
+        if not d_type:
+            tiktok_patterns = [
+                r'\b(tiktok\.com)\b',
+                r'(?:^|[-–—|]\s*)tiktok(?:\s*[-–—|]|\s*$)'
+            ]
+            threads_patterns = [
+                r'\b(threads\.net)\b',
+                r'(?:^|[-–—|]\s*)threads(?:\s*,\s*an\s*instagram\s*app)?(?:\s*[-–—|]|\s*$)',
+                r'\bon\s+threads(?:\s*[-–—|]|\s*$)'
+            ]
+            other_social_patterns = [
+                r'\b(bilibili|netflix|shopee|lazada|discord|twitch|reddit|weibo)\b',
+                r'(?:^|[-–—|/]\s*)(?:telegram)(?:\s*[-–—|/]|\s*$)',
+                r'(?:^|[-–—|/]\s*)instagram(?:\s*[-–—|/]|\s*$)',
+                r'(?:^|[-–—|/]\s*)pinterest(?:\s*[-–—|/]|\s*$)'
+            ]
+            if not is_dev_doc:
+                other_social_patterns.extend([
+                    r'\b(twitter\.com|x\.com)\b',
+                    r'(?:^|[-–—|/]\s*)(?:twitter|x)(?:\s*[-–—|/]|\s*$)',
+                    r'^\([0-9+]+\)\s*(?:twitter|x)\b',
+                    r'\b(twitter\s*/\s*x|x\s*/\s*twitter)\b'
+                ])
+
+            if any(re.search(p, t_low) for p in tiktok_patterns):
                 d_type = "WEB_DISTRACT"
                 d_label = "TikTok"
-            elif re.search(r'\b(bilibili|netflix|shopee|lazada|instagram|discord|telegram|twitch|reddit|threads|twitter|weibo|pinterest)\b', t_low):
+            elif any(re.search(p, t_low) for p in threads_patterns):
+                d_type = "WEB_DISTRACT"
+                d_label = "Threads"
+            elif any(re.search(p, t_low) for p in other_social_patterns):
                 d_type = "WEB_DISTRACT"
                 d_label = "Mạng xã hội / Mua sắm / Giải trí"
 
-        # Nếu cửa sổ hiện tại KHÔNG PHẢI mạng xã hội -> Reset ngay lập tức
-        if not d_type:
-            self.active_operate_time = 0.0
-            self.current_distraction = None
-            return None
+        # Nếu không thuộc bất kỳ nhóm gây xao nhãng nào HOẶC khớp danh mục an toàn chung
+        if not d_type or any(safe in t_low for safe in general_safe_keywords):
+            if not d_type or (d_type not in ("FACEBOOK", "YOUTUBE") and "Đã chặn" not in (d_label or "") and d_label != "Trang web 18+ / Nhạy cảm"):
+                self.active_operate_time = 0.0
+                self.current_distraction = None
+                return None
 
         # Cửa sổ hiện tại LÀ Facebook/YouTube/Giải trí:
         # Kiểm tra xem người dùng có ĐANG THAO TÁC (gõ phím, click chuột, cuộn trang) không?

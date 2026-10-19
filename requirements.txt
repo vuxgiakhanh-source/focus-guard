@@ -1,10 +1,10 @@
+# FocusGuard PRO - Dependencies
+# Khuyen nghi su dung Python 3.10 - 3.13 (PyPI co san prebuilt wheels cho Windows)
 opencv-python>=4.8.0
 mediapipe>=0.10.14
 numpy>=1.24.0
 pillow>=9.0.0
 pygame>=2.5.0
-edge-tts>=7.0.0
 ultralytics>=8.0.0
 psutil>=5.9.0
 torch>=2.0.0
-winotify>=1.1.0

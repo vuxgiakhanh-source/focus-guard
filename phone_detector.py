@@ -39,9 +39,9 @@ class PhoneTrack:
 
         recent_contacts = [pt[1] for pt in self.hand_contact_history if pt[0] >= now - 1.5]
         hand_contact_rate = (sum(recent_contacts) / len(recent_contacts)) if recent_contacts else 0.0
-        has_hand = has_hand_contact or (hand_contact_rate >= 0.20)
+        has_hand = has_hand_contact or (hand_contact_rate >= 0.35)
 
-        # Kiểm tra độ cao vị trí: Nếu ở nửa trên khung hình (ngang ngực/mặt), người dùng đang giơ lên xem
+        # Kiểm tra độ cao vị trí: Nếu ở nửa trên khung hình (ngang ngực/mặt), có thể là giơ lên hoặc dựng trên giá đỡ
         is_elevated = (self.frame_h is not None and cy < self.frame_h * 0.65)
 
         if len(self.history) >= 2:
@@ -49,22 +49,28 @@ class PhoneTrack:
             ys = [pt[2] for pt in self.history]
             net_disp = math.hypot(xs[-1] - xs[0], ys[-1] - ys[0])
             peak_disp = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+            is_moving = (net_disp > 14.0 or peak_disp > 20.0)
 
-            # 1. Có bàn tay chạm/đỡ HOẶC đang giơ cao ngang ngực/mặt -> CẦM TRÊN TAY
-            if has_hand or is_elevated:
+            # 1. Có chuyển động thực sự (nhấc lên, di chuyển, lắc tay, vuốt lướt):
+            if is_moving:
                 self.is_held = True
                 self.static_start_time = None
-            # 2. Có chuyển động thực sự (nhấc lên, di chuyển, lắc tay; bỏ qua rung nhẹ của box YOLO <= 14px)
-            elif net_disp > 14.0 or peak_disp > 20.0:
-                self.is_held = True
-                self.static_start_time = None
-            # 3. Không có tay chạm VÀ ở vùng mặt bàn VÀ vị trí gần như bất động hoàn toàn
+            # 2. Đang ở vị trí bất động (đặt trên bàn hoặc dựng trên giá đỡ/kệ):
             else:
-                if self.static_start_time is None:
-                    self.static_start_time = now
-                elif now - self.static_start_time >= 2.0:
-                    # Nằm yên trên bàn không có tay chạm > 2.0s -> ĐẶT TĨNH TRÊN BÀN
-                    self.is_held = False
+                # Nếu có bàn tay chạm nhưng hoàn toàn bất động (ngón tay đặt hờ lên máy trên bàn)
+                # Cho thời gian ân hạn 3.0s trước khi chuyển sang trạng thái tĩnh
+                if has_hand:
+                    if self.static_start_time is None:
+                        self.static_start_time = now
+                    elif now - self.static_start_time >= 3.0:
+                        self.is_held = False
+                # Hoàn toàn không có tay chạm (đặt trên bàn hoặc dựng trên giá đỡ/kệ elevated)
+                else:
+                    if self.static_start_time is None:
+                        self.static_start_time = now
+                    elif now - self.static_start_time >= 2.0:
+                        # Đứng yên > 2.0s không có tay chạm -> ĐẶT TĨNH TRÊN BÀN / KỆ ĐỠ
+                        self.is_held = False
         else:
             self.is_held = True
 
@@ -75,8 +81,8 @@ class KinematicPhoneTracker:
         self.tracks = []
 
     def update(self, raw_boxes, now, frame_h=None):
-        # Dọn dẹp vết cũ quá 2.5s
-        self.tracks = [tr for tr in self.tracks if (now - tr.last_seen) < 2.5]
+        # Dọn dẹp vết cũ quá 3.5s
+        self.tracks = [tr for tr in self.tracks if (now - tr.last_seen) < 3.5]
 
         results = []
         for item in raw_boxes:
@@ -274,25 +280,34 @@ class PhoneDetector:
         if core_y2 > core_y1 and core_x2 > core_x1:
             ring_mask[core_y1:core_y2, core_x1:core_x2] = False
 
-        # Phối hợp YCrCb + HSV để nhận diện màu da chính xác, chống nhận nhầm mặt bàn gỗ / bìa sách màu kem
+        # Phối hợp YCrCb + HSV với phân bổ màu da sinh trắc học chuẩn xác,
+        # loại bỏ triệt để mặt bàn gỗ, bìa kraft, tường kem và đồ vật màu be/vàng
         ycrcb = cv2.cvtColor(hand_roi, cv2.COLOR_BGR2YCrCb)
         hsv = cv2.cvtColor(hand_roi, cv2.COLOR_BGR2HSV)
 
-        # Ngưỡng da sinh trắc học chuẩn trong không gian YCrCb (có ràng buộc độ sáng Y)
-        skin_ycrcb = (ycrcb[:, :, 0] >= 40) & (ycrcb[:, :, 0] <= 250) & \
-                     (ycrcb[:, :, 1] >= 128) & (ycrcb[:, :, 1] <= 180) & \
-                     (ycrcb[:, :, 2] >= 70) & (ycrcb[:, :, 2] <= 138)
+        # 1. Ngưỡng sắc thái da (Hue) chuẩn người: 0-13 hoặc 175-180 (đỏ/hồng/cam đào)
+        # Loại bỏ hoàn toàn gỗ thông, sồi, bìa kraft, tường kem (Hue thường từ 14-35)
+        # 2. Độ bão hòa Saturation: da người trong khoảng 50-165 (tường kem/giấy trắng có S rất thấp < 50)
+        skin_hsv = ((hsv[:, :, 0] <= 13) | (hsv[:, :, 0] >= 175)) & \
+                   (hsv[:, :, 1] >= 50) & (hsv[:, :, 1] <= 165) & \
+                   (hsv[:, :, 2] >= 40)
 
-        # Ngưỡng sắc thái da trong HSV (Hue da người 0-30 hoặc 165-180, bão hòa vừa phải)
-        skin_hsv = ((hsv[:, :, 0] <= 30) | (hsv[:, :, 0] >= 165)) & \
-                   (hsv[:, :, 1] >= 20) & (hsv[:, :, 1] <= 230) & \
-                   (hsv[:, :, 2] >= 35)
+        # 3. YCrCb sinh trắc học: Cr phản ánh sắc tố đỏ của hemoglobin, Cb phản ánh xanh lam
+        # Da người luôn có Cr vượt trội Cb (Cr - Cb >= 22)
+        y_chan = ycrcb[:, :, 0]
+        cr_chan = ycrcb[:, :, 1]
+        cb_chan = ycrcb[:, :, 2]
+        skin_ycrcb = (y_chan >= 50) & (y_chan <= 245) & \
+                     (cr_chan >= 135) & (cr_chan <= 175) & \
+                     (cb_chan >= 90) & (cb_chan <= 132) & \
+                     ((cr_chan.astype(np.int16) - cb_chan.astype(np.int16)) >= 22)
 
         skin_mask = (skin_ycrcb & skin_hsv) & ring_mask
         skin_pixels = np.count_nonzero(skin_mask)
         ring_pixel_count = np.count_nonzero(ring_mask)
         skin_ratio = float(skin_pixels) / max(1, ring_pixel_count)
-        has_hand_contact = (skin_ratio >= 0.020)
+        # Bắt buộc ít nhất 4.5% diện tích vành viền có tiếp xúc ngón tay / bàn tay
+        has_hand_contact = (skin_ratio >= 0.045)
 
         # 4. LOẠI BỎ TRANG SÁCH / GIẤY VỞ TRẮNG TRÊN BÀN HỌC (PHOTOMETRIC PAPER FILTER):
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)

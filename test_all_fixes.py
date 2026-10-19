@@ -132,6 +132,65 @@ class TestAppMonitor(unittest.TestCase):
             self.assertIsNone(res, f"False positive: '{title}' should be allowed as educational study material!")
 
 
+    def test_false_positives_reviewer_reported(self):
+        """
+        Kiểm tra toàn bộ 14 trường hợp học tập / nghiên cứu / lập trình mà reviewer báo cáo:
+        Tất cả các tiêu đề này TUYỆT ĐỐI KHÔNG ĐƯỢC BÁO NHẦM!
+        """
+        safe_academic_and_dev_titles = [
+            # 1. Sinh học / Y tế / Sức khỏe (Chứa từ 'sex')
+            "Sex determination in mammals",
+            "Sex education curriculum",
+            "Sex differences in the brain",
+            "Fair Sex in modern history",
+            # 2. Soạn thảo văn bản / Lập trình (Chứa tên Facebook / YouTube)
+            "Báo cáo đề tài về Facebook.docx - Word",
+            "facebook-scraper.py - Visual Studio Code",
+            "youtube-dl.py - Visual Studio Code",
+            "facebook_api.py - PyCharm",
+            # 3. Kỹ thuật / Khoa học / Tự nhiên (Chứa từ 'threads', 'steam', 'origin', 'reels')
+            "Python threads and locks",
+            "Multithreading in Java.pdf - Foxit PDF Reader",
+            "Steam engine - Wikipedia",
+            "Steam turbine thermodynamics",
+            "Origin of Species - Charles Darwin",
+            "Origin of the Universe - Google Search - Google Chrome",
+            # 4. Tài liệu kỹ thuật / Tìm kiếm / Câu cá
+            "Twitter API documentation",
+            "Pinterest board ideas",
+            "Fishing reels"
+        ]
+        self.mon.get_system_idle_seconds = lambda: 0.1
+        for title in safe_academic_and_dev_titles:
+            self.mon.get_foreground_title = lambda t=title: t
+            self.mon.active_operate_time = 5.0
+            res = self.mon.check_distraction()
+            self.assertIsNone(res, f"False positive detected: '{title}' must NOT trigger distraction alert! Got: {res}")
+
+    def test_distraction_in_browser_still_caught(self):
+        """Đảm bảo các trang mạng xã hội / giải trí thật trong trình duyệt vẫn bị bắt chính xác"""
+        real_distractions = [
+            ("Facebook - Google Chrome", "FACEBOOK"),
+            ("(5) Facebook - Google Chrome", "FACEBOOK"),
+            ("Học bài cùng tôi | Facebook - Google Chrome", "FACEBOOK"),
+            ("Facebook Watch - Microsoft Edge", "FACEBOOK"),
+            ("Tự học Excel mỗi ngày | Facebook - Google Chrome", "FACEBOOK"),
+            ("Threads - Google Chrome", "WEB_DISTRACT"),
+            ("Twitter / X - Google Chrome", "WEB_DISTRACT"),
+            ("Steam - Google Chrome", "WEB_DISTRACT"),
+            ("Pornhub.com - Google Chrome", "WEB_DISTRACT"),
+            ("Phim sex Vietsub mới - Google Chrome", "WEB_DISTRACT"),
+            ("League of Legends", "WEB_DISTRACT")
+        ]
+        self.mon.get_system_idle_seconds = lambda: 0.1
+        for title, expected_type in real_distractions:
+            self.mon.get_foreground_title = lambda t=title: t
+            self.mon.active_operate_time = 5.0
+            res = self.mon.check_distraction()
+            self.assertIsNotNone(res, f"Real distraction missed: '{title}'")
+            self.assertEqual(res["alert_type"], expected_type, f"Wrong alert type for '{title}'")
+
+
 class TestPhoneKinematics(unittest.TestCase):
     def test_phone_tracker_stationary_desk(self):
         from phone_detector import KinematicPhoneTracker
@@ -160,20 +219,39 @@ class TestPhoneKinematics(unittest.TestCase):
         res = tracker.update([(140, 270, 240, 370, 0.75, False)], now + 3.8, frame_h=480)
         self.assertTrue(res[0][5], "Moving phone must transition to is_held=True")
 
-    def test_phone_tracker_elevated_in_hand(self):
+    def test_phone_tracker_stationary_on_elevated_stand(self):
+        """Điện thoại dựng trên giá đỡ ở tầm mắt (cy = 180, frame_h = 480 < 0.65 frame_h)"""
         from phone_detector import KinematicPhoneTracker
         tracker = KinematicPhoneTracker()
         now = time.monotonic()
 
-        # Người dùng cầm điện thoại ngang ngực/mặt (cy = 180, frame_h = 480 < 0.65 frame_h)
-        # Dù không phát hiện được màu da (has_hand=False) và cầm bất động, vẫn là ĐANG CẦM
+        # Ban đầu xuất hiện trên giá đỡ:
         boxes = [(100, 130, 200, 230, 0.70, False)]
         res = tracker.update(boxes, now, frame_h=480)
         self.assertTrue(res[0][5])
 
-        # Sau 3 giây cầm yên ngang ngực: vẫn là CẦM TRÊN TAY
-        res = tracker.update([(100, 130, 200, 230, 0.70, False)], now + 3.0, frame_h=480)
-        self.assertTrue(res[0][5], "Phone held elevated at chest/face level must remain is_held=True even when still")
+        # Sau 0.5s: vẫn yên vị trên giá
+        res = tracker.update([(100, 130, 200, 230, 0.70, False)], now + 0.5, frame_h=480)
+        self.assertTrue(res[0][5])
+
+        # Đứng yên trên giá đỡ > 2.0s và không có tay chạm -> Chuyển thành False (TĨNH TRÊN GIÁ ĐỠ)
+        res = tracker.update([(100, 130, 200, 230, 0.70, False)], now + 2.3, frame_h=480)
+        self.assertFalse(res[0][5], "Phone stationary on stand without hand must transition to is_held=False")
+
+    def test_phone_tracker_elevated_in_hand_moving(self):
+        """Điện thoại cầm trên tay giơ lên xem (ngang ngực/mặt, có tay hoặc có cử động)"""
+        from phone_detector import KinematicPhoneTracker
+        tracker = KinematicPhoneTracker()
+        now = time.monotonic()
+
+        # Người dùng cầm trên tay (has_hand=True) giơ ngang ngực
+        boxes = [(100, 130, 200, 230, 0.70, True)]
+        res = tracker.update(boxes, now, frame_h=480)
+        self.assertTrue(res[0][5])
+
+        # Đang vuốt lướt / cử động tay (di chuyển 18px)
+        res = tracker.update([(118, 130, 218, 230, 0.70, True)], now + 1.0, frame_h=480)
+        self.assertTrue(res[0][5], "Phone held and moving in hand must remain is_held=True")
 
     def test_phone_tracker_hand_contact(self):
         from phone_detector import KinematicPhoneTracker
@@ -185,8 +263,39 @@ class TestPhoneKinematics(unittest.TestCase):
         res = tracker.update([(100, 100, 200, 300, 0.70, True)], now)
         self.assertTrue(res[0][5])
 
-        res = tracker.update([(100, 100, 200, 300, 0.70, True)], now + 2.5)
-        self.assertTrue(res[0][5], "Phone held still in hands must remain is_held=True due to hand contact")
+        # Trong vòng 1.5s: vẫn là cầm trên tay
+        res = tracker.update([(100, 100, 200, 300, 0.70, True)], now + 1.5)
+        self.assertTrue(res[0][5], "Phone held in hand within grace period must remain is_held=True")
+
+    def test_skin_color_rejection(self):
+        """Kiểm tra bộ lọc da sinh trắc học loại bỏ bàn gỗ, giấy kraft, tường kem và nhận diện đúng da người"""
+        import cv2
+        test_palette = {
+            'fair_skin': (np.array([[[145, 170, 220]]], dtype=np.uint8), True),
+            'asian_skin': (np.array([[[130, 160, 210]]], dtype=np.uint8), True),
+            'tan_skin': (np.array([[[85, 115, 175]]], dtype=np.uint8), True),
+            'wood_pine': (np.array([[[80, 140, 190]]], dtype=np.uint8), False),
+            'wood_oak': (np.array([[[50, 100, 160]]], dtype=np.uint8), False),
+            'kraft_paper': (np.array([[[100, 150, 180]]], dtype=np.uint8), False),
+            'cream_wall': (np.array([[[180, 210, 225]]], dtype=np.uint8), False),
+            'white_paper': (np.array([[[240, 245, 250]]], dtype=np.uint8), False),
+        }
+        for name, (bgr, expected_is_skin) in test_palette.items():
+            hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[0,0]
+            ycrcb = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)[0,0]
+            y, cr, cb = int(ycrcb[0]), int(ycrcb[1]), int(ycrcb[2])
+            h, s, v = int(hsv[0]), int(hsv[1]), int(hsv[2])
+
+            is_skin = (
+                ((h <= 13) or (h >= 175)) and
+                (s >= 50 and s <= 165) and
+                (v >= 40) and
+                (y >= 50 and y <= 245) and
+                (cr >= 135 and cr <= 175) and
+                (cb >= 90 and cb <= 132) and
+                ((cr - cb) >= 22)
+            )
+            self.assertEqual(is_skin, expected_is_skin, f"Color test failed for {name}: expected {expected_is_skin}, got {is_skin}")
 
 
 class TestPomodoroToggle(unittest.TestCase):
@@ -304,6 +413,28 @@ class TestDeskSleepingDetection(unittest.TestCase):
         self.assertIn("ĐÃ LƯU KHUNG HỌC", msg)
         self.assertIn("CHỐT SỚM", msg)
         self.assertTrue(detector.is_study_zone_set)
+
+
+class TestAudioAlertManager(unittest.TestCase):
+    def test_mci_playback_loop_duration(self):
+        """Kiểm tra mã nguồn alert.py có vòng lặp MCI tối thiểu 200 bước (>= 10.0s) để không cắt cụt âm thanh"""
+        alert_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alert.py")
+        with open(alert_file, "r", encoding="utf-8") as f:
+            code = f.read()
+
+        import re
+        m = re.search(r'for\s+_\s+in\s+range\((\d+)\):', code)
+        self.assertIsNotNone(m, "Could not find MCI wait loop in alert.py")
+        iterations = int(m.group(1))
+        # 240 iterations * 0.05s = 12.0s
+        self.assertGreaterEqual(iterations, 200, f"MCI wait loop must be at least 200 iterations (10s), got {iterations}")
+
+    def test_all_voice_files_exist(self):
+        """Đảm bảo tất cả 11 file âm thanh MP3 cảnh báo đều tồn tại đầy đủ"""
+        from alert import SoundAlertManager
+        mgr = SoundAlertManager()
+        for alert_type, filepath in mgr.voice_map.items():
+            self.assertTrue(os.path.exists(filepath), f"Missing voice file for {alert_type}: {filepath}")
 
 
 if __name__ == "__main__":

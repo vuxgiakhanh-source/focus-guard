@@ -154,7 +154,9 @@ class SoundAlertManager:
                             mci("play fg_alert", None, 0, 0)
 
                             status_buf = ctypes.create_unicode_buffer(64)
-                            for _ in range(80):
+                            # Đợi tối đa 12.0 giây (240 * 0.05s) để các câu thoại dài (youtube 6.4s, facebook 5.4s) phát trọn vẹn;
+                            # tự động thoát ngay khi trạng thái chuyển sang 'stopped'
+                            for _ in range(240):
                                 with self.lock:
                                     if self._stop_requested:
                                         break
