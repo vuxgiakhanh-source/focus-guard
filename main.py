@@ -426,19 +426,19 @@ def run_focus_guard():
                     elif result["status"] in ["DISTRACTED", "AWAY"]:
                         distraction_events += 1
                     last_alert_state = True
-    
+
                 if not is_muted and result.get("alert_type"):
-                    # Giãn cách thông minh: Không bao giờ nói lặp đi lặp lại quấy rầy người học
+                    # Tần suất nhắc nhở quyết liệt: Nhắc lại liên tục sau 6-7s nếu người dùng vẫn chưa chịu dừng
                     if result["alert_type"] == "AWAY":
-                        voice_cd = 60.0    # Rời bàn chỉ nhắc 1 lần, 60s sau mới nhắc lại nếu vẫn chưa về
+                        voice_cd = 25.0    # Rời bàn nhắc lại sau 25s nếu chưa về
                     elif result["alert_type"] in ["FACEBOOK", "YOUTUBE", "WEB_DISTRACT"]:
-                        voice_cd = 20.0    # Mạng xã hội giãn cách 20s
+                        voice_cd = 6.5     # Mạng xã hội / Web xao nhãng: Nhắc lại sau 6.5s nếu chưa chịu tắt tab!
                     elif result["alert_type"] == "PHONE":
-                        voice_cd = 16.0    # Điện thoại giãn cách 16s
+                        voice_cd = 6.0     # Điện thoại trên tay: Nhắc lại sau 6.0s nếu chưa bỏ xuống!
                     elif result["alert_type"] == "DROWSY":
-                        voice_cd = 15.0    # Buồn ngủ giãn cách 15s
+                        voice_cd = 7.0     # Buồn ngủ: Nhắc lại sau 7.0s để đánh thức
                     else:
-                        voice_cd = 18.0    # Quay mặt đi giãn cách 18s (triệt tiêu nói lặp 3.5s)
+                        voice_cd = 8.0     # Mất tập trung / Quay mặt đi: Nhắc lại sau 8.0s
                     alert_mgr.play_voice(result["alert_type"], cooldown=voice_cd)
             else:
                 # Ngay khi quay lại tập trung: Dừng âm thanh nếu đã phát xong câu cảnh báo (chống ngắt ngang ngắp ngứ)
