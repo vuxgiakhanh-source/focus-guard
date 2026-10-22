@@ -38,5 +38,5 @@ if not exist "%PYTHONW%" (
     where pythonw >nul 2>&1 || set "PYTHONW=%PYTHON%"
 )
 
-start "" "%PYTHONW%" "%~dp0main.py"
+start "" "%PYTHONW%" "%~dp0main.py" --restart
 exit
