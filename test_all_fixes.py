@@ -23,16 +23,25 @@ class TestAppMonitor(unittest.TestCase):
     def test_distraction_patterns(self):
         test_cases = [
             ("Instagram - Google Chrome", True, "WEB_DISTRACT"),
+            ("(1) Instagram - Google Chrome", True, "WEB_DISTRACT"),
+            ("Chi Pu (@chipupu) • Instagram photos and videos - Google Chrome", True, "WEB_DISTRACT"),
             ("Reddit - Dive into anything - Google Chrome", True, "WEB_DISTRACT"),
             ("Netflix - Google Chrome", True, "WEB_DISTRACT"),
             ("Twitch - Google Chrome", True, "WEB_DISTRACT"),
             ("Shopee Việt Nam | Mua và Bán Trên Sàn TMĐT - Google Chrome", True, "WEB_DISTRACT"),
             ("Threads - Google Chrome", True, "WEB_DISTRACT"),
+            ("(1) Threads - Google Chrome", True, "WEB_DISTRACT"),
+            ("Threads • Say more - Google Chrome", True, "WEB_DISTRACT"),
+            ("Hà Anh Tuấn (@haanhtuan) • Threads - Google Chrome", True, "WEB_DISTRACT"),
+            ("Hà Anh Tuấn (@haanhtuan) trên Threads: Bài viết mới - Google Chrome", True, "WEB_DISTRACT"),
+            ("John Doe (@johndoe) on Threads: Hello world - Google Chrome", True, "WEB_DISTRACT"),
+            ("threads.com - Google Chrome", True, "WEB_DISTRACT"),
             ("(1) Facebook - Google Chrome", True, "FACEBOOK"),
             ("Facebook và 1 trang khác - Microsoft​ Edge", True, "FACEBOOK"),
             ("Messenger | Trò chuyện - Cốc Cốc", True, "FACEBOOK"),
             ("YouTube - Google Chrome", True, "YOUTUBE"),
             ("TikTok - Make Your Day - Google Chrome", True, "WEB_DISTRACT"),
+            ("(1) TikTok - Make Your Day - Google Chrome", True, "WEB_DISTRACT"),
             ("Twitter / X - Google Chrome", True, "WEB_DISTRACT"),
             ("Pornhub - Free Porn Videos - Google Chrome", True, "WEB_DISTRACT"),
             ("XVideos: Free Sex Videos - Google Chrome", True, "WEB_DISTRACT"),
@@ -322,13 +331,14 @@ class TestPomodoroToggle(unittest.TestCase):
 class TestHistoryWeightedAverages(unittest.TestCase):
     def setUp(self):
         from history import SessionHistoryManager
-        self.test_file = "test_focus_history_tmp.json"
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.test_file = os.path.join(base_dir, "test_focus_history_tmp.json")
         if os.path.exists(self.test_file):
             os.remove(self.test_file)
         self.mgr = SessionHistoryManager(history_file=self.test_file)
 
     def tearDown(self):
-        if os.path.exists(self.test_file):
+        if hasattr(self, 'test_file') and os.path.exists(self.test_file):
             os.remove(self.test_file)
 
     def test_short_session_filtering(self):

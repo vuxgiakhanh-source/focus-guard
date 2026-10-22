@@ -272,27 +272,39 @@ class AppDistractionMonitor:
                 d_type = "YOUTUBE"
                 d_label = "YouTube"
 
-        # 5. TikTok & Các mạng xã hội / Mua sắm khác:
+        # 5. TikTok, Threads, Instagram & Các mạng xã hội / Mua sắm khác:
         if not d_type:
             tiktok_patterns = [
                 r'\b(tiktok\.com)\b',
-                r'(?:^|[-–—|]\s*)tiktok(?:\s*[-–—|]|\s*$)'
+                r'(?:^|[-–—|/•]\s*)tiktok(?:\s*[-–—|/•:]|\s*$)',
+                r'^\([0-9+]+\)\s*.*?\btiktok\b'
             ]
             threads_patterns = [
-                r'\b(threads\.net)\b',
-                r'(?:^|[-–—|]\s*)threads(?:\s*,\s*an\s*instagram\s*app)?(?:\s*[-–—|]|\s*$)',
-                r'\bon\s+threads(?:\s*[-–—|]|\s*$)'
+                r'\b(threads\.(?:net|com))\b',
+                r'(?:^|[-–—|/•]\s*)threads(?:\s*,\s*(?:an\s*instagram\s*app|m[oộ]t\s*[uứ]ng\s*d[uụ]ng\s*c[uủ]a\s*instagram))?(?:\s*[-–—|/•:]|\s*$)',
+                r'^\([0-9+]+\)\s*threads(?:\s*[-–—|/•:]|\s*$)',
+                r'\b(?:on|tren|trên)\s+threads(?::|\b)',
+                r'•\s*threads(?:\s*[-–—|/•:]|\s*$)',
+                r'\bthreads\s*[•|–—-]\s*(?:say\s+more|trang\s+ch[uủ]|home|feed|b[aả]ng\s+tin)\b',
+                r'\(@[a-zA-Z0-9._]+\)\s*(?:•|[-–—|/:]|on|tr[eê]n)\s*threads\b',
+                r'^\([0-9+]+\)\s*.*?(?:•|on|tr[eê]n)\s*threads\b'
+            ]
+            instagram_patterns = [
+                r'\b(instagram\.com)\b',
+                r'(?:^|[-–—|/•]\s*)instagram(?:\s*[-–—|/•:]|\s*$)',
+                r'^\([0-9+]+\)\s*.*?\binstagram\b',
+                r'\b(?:on|tren|trên)\s+instagram(?::|\b)',
+                r'•\s*instagram\b'
             ]
             other_social_patterns = [
                 r'\b(bilibili|netflix|shopee|lazada|discord|twitch|reddit|weibo)\b',
-                r'(?:^|[-–—|/]\s*)(?:telegram)(?:\s*[-–—|/]|\s*$)',
-                r'(?:^|[-–—|/]\s*)instagram(?:\s*[-–—|/]|\s*$)',
-                r'(?:^|[-–—|/]\s*)pinterest(?:\s*[-–—|/]|\s*$)'
+                r'(?:^|[-–—|/•]\s*)(?:telegram)(?:\s*[-–—|/•]|\s*$)',
+                r'(?:^|[-–—|/•]\s*)pinterest(?:\s*[-–—|/•]|\s*$)'
             ]
             if not is_dev_doc:
                 other_social_patterns.extend([
                     r'\b(twitter\.com|x\.com)\b',
-                    r'(?:^|[-–—|/]\s*)(?:twitter|x)(?:\s*[-–—|/]|\s*$)',
+                    r'(?:^|[-–—|/•]\s*)(?:twitter|x)(?:\s*[-–—|/•]|\s*$)',
                     r'^\([0-9+]+\)\s*(?:twitter|x)\b',
                     r'\b(twitter\s*/\s*x|x\s*/\s*twitter)\b'
                 ])
@@ -303,13 +315,16 @@ class AppDistractionMonitor:
             elif any(re.search(p, t_low) for p in threads_patterns):
                 d_type = "WEB_DISTRACT"
                 d_label = "Threads"
+            elif any(re.search(p, t_low) for p in instagram_patterns):
+                d_type = "WEB_DISTRACT"
+                d_label = "Instagram"
             elif any(re.search(p, t_low) for p in other_social_patterns):
                 d_type = "WEB_DISTRACT"
                 d_label = "Mạng xã hội / Mua sắm / Giải trí"
 
         # Nếu không thuộc bất kỳ nhóm gây xao nhãng nào HOẶC khớp danh mục an toàn chung
         if not d_type or any(safe in t_low for safe in general_safe_keywords):
-            if not d_type or (d_type not in ("FACEBOOK", "YOUTUBE") and "Đã chặn" not in (d_label or "") and d_label != "Trang web 18+ / Nhạy cảm"):
+            if not d_type or (d_type not in ("FACEBOOK", "YOUTUBE") and "Đã chặn" not in (d_label or "") and d_label != "Trang web 18+ / Nhạy cảm" and d_label not in ("Threads", "TikTok", "Instagram")):
                 self.active_operate_time = 0.0
                 self.current_distraction = None
                 return None
